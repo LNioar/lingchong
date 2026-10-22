@@ -247,6 +247,11 @@ impl AppState {
         Ok(result)
     }
 
+    /// 没有可播报热点时，由 LLM 生成一句自然回应（不弹固定文案）。
+    pub async fn idle_reply(&self) -> String {
+        self.agent.lock().await.compose_idle_reply().await
+    }
+
     /// 触发一次指定平台的采集。
     pub async fn fetch_platform(&self, platform: &str) -> deskpet_collector::FetchOutcome {
         if !self.config.lock().await.fetch.platforms.iter().any(|p| p.id == platform && p.enabled) {

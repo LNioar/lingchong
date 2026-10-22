@@ -10,7 +10,7 @@ use deskpet_core::{EmbeddingProvider, HotItem, Mood, PetProfile, UserProfile};
 use deskpet_storage::{AnnouncementRepo, HotRepo, ProfileRepo};
 
 use crate::llm::{ChatMessage, LlmProvider};
-use crate::scoring::{score, SCORE_THRESHOLD, COLD_START_THRESHOLD};
+use crate::scoring::{score, effective_threshold, has_usable_embeddings, SCORE_THRESHOLD, COLD_START_THRESHOLD};
 
 /// Agent 输出。
 #[derive(Debug, Clone)]
@@ -107,20 +107,37 @@ impl AgentOrchestrator {
         // 补算缺失的兴趣 embedding 并持久化（不持 DB 锁）
         self.ensure_interest_embeddings(&mut profile).await;
 
+        // 只有持有真实向量的兴趣才能参与相似度；否则 sim 恒为 0
+        let sim_available = has_usable_embeddings(&profile);
+
         // 打分（同步，需 conn）
         let mut scored: Vec<(f32, HotItem)> = {
             let conn = self.db.lock().await;
             candidates
                 .into_iter()
-                .map(|it| (score(&conn, &it, &profile), it))
+                .map(|it| (score(&conn, &it, &profile, sim_available), it))
                 .collect()
         };
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         let (top_score, top_item) = scored.remove(0);
-        // 冷启动：无兴趣画像时用较低阈值，让热点能播出，通过反馈逐步学习
-        let threshold = if profile.interests.is_empty() { COLD_START_THRESHOLD } else { self.score_threshold };
-        info!("[agent] top candidate score={:.3} title={} (threshold={:.1})", top_score, top_item.title, threshold);
+        // 冷启动：无兴趣画像时用较低阈值，让热点能播出，通过反馈逐步学习。
+        // 有画像但向量不可用时，按剩余可用分量折算阈值，否则 0.6 永远达不到。
+        let threshold = if profile.interests.is_empty() {
+            COLD_START_THRESHOLD
+        } else {
+            effective_threshold(self.score_threshold, sim_available)
+        };
+        if !sim_available && !profile.interests.is_empty() {
+            info!(
+                "[agent] interest embeddings unavailable, sim skipped; threshold scaled {:.2} -> {:.2}",
+                self.score_threshold, threshold
+            );
+        }
+        info!(
+            "[agent] top candidate score={:.3} title={} (threshold={:.2}, sim_available={})",
+            top_score, top_item.title, threshold, sim_available
+        );
         if !manual && top_score < threshold {
             info!("[agent] below threshold, skip");
             return None;
@@ -247,6 +264,48 @@ impl AgentOrchestrator {
 
         let preview: String = c2.trim().chars().take(80).collect();
         Err(format!("no usable script (retry output={preview:?})"))
+    }
+
+    /// 没有可播报热点时的自然回应：由 LLM 按宠物口吻生成，失败则用模板兜底。
+    pub async fn compose_idle_reply(&self) -> String {
+        let persona = {
+            let conn = self.db.lock().await;
+            let profile = ProfileRepo::load(&conn).unwrap_or_default();
+            if profile.persona.is_empty() { synthesize_persona(&profile) } else { profile.persona.clone() }
+        };
+        let system = format!(
+            "你是一只陪伴主人的宠物。\n\
+             宠物名称：{}\n\
+             宠物性格：{}\n\
+             表达偏好：{}\n\
+             背景设定：{}\n\
+             主人画像：{persona}\n\
+             \n\
+             主人刚刚召唤了你，但你翻了一圈确实没有值得播报的新鲜事。\n\
+             请用你自己的口吻自然回应一下，说明暂时没有新热点、你还在帮主人盯着。\n\
+             \n\
+             注意事项：\n\
+             - 不要编造热点内容或链接\n\
+             - 不要提“联网刷新”“采集”“候选”这类系统词\n\
+             - 不要请求更多信息，不要使用任何工具\n\
+             - 直接输出要对主人说的话，不要加前置说明或过渡语",
+            self.pet.name, self.pet.personality, self.pet.speaking_style, self.pet.background
+        );
+        let messages = vec![
+            ChatMessage { role: "system".into(), content: system },
+            ChatMessage { role: "user".into(), content: "主人刚叫了你一下，跟他说点什么吧：".into() },
+        ];
+        match self.llm.chat(&messages, None).await {
+            Ok(resp) => {
+                let content = resp.content.unwrap_or_default();
+                if is_usable_script(&content) {
+                    return content.trim().to_string();
+                }
+                warn!("[agent] idle reply not usable: {:?}", content.trim());
+            }
+            Err(e) => warn!("[agent] idle reply LLM failed ({e}), fallback to template"),
+        }
+        "主人～我刚刚翻了一圈，暂时没挖到什么新鲜事，等我发现好玩的再喊你～".to_string()
     }
 }
 

@@ -2,6 +2,11 @@
 //!
 //! score = 0.6*sim + 0.2*heat + 0.15*fresh + 0.05*penalty
 //! 其中 sim 用热点 embedding 与兴趣 embedding 的最大余弦相似度。
+//!
+//! sim 只有在一个兴趣持有真实向量时才参与计算。embedding 不可用时（未配置
+//! embedding_model、服务端不支持 /embeddings、补算失败等），sim 恒为 0，
+//! 总分上限只剩 0.4，因此必须用 [`effective_threshold`] 把配置阈值按可用分量折算，
+//! 否则自动播报永远达不到阈值。
 
 use chrono::Utc;
 use rusqlite::Connection;
@@ -9,23 +14,22 @@ use rusqlite::Connection;
 use deskpet_core::{HotItem, UserProfile};
 use deskpet_storage::{FeedbackRepo, vector};
 
+/// 兴趣相似度权重。
+pub const W_SIM: f32 = 0.6;
+/// 热度权重。
+pub const W_HEAT: f32 = 0.2;
+/// 新鲜度权重。
+pub const W_FRESH: f32 = 0.15;
+/// 反馈惩罚权重。
+pub const W_PENALTY: f32 = 0.05;
+
 /// 单条打分。
 /// 热点 embedding 从 hot_embeddings 表读（由 collector 写入真实向量）；
 /// 兴趣 embedding 从 Interest.embedding 字段读（由 orchestrator 补算并持久化）。
-pub fn score(conn: &Connection, item: &HotItem, profile: &UserProfile) -> f32 {
+/// `sim_available` 为 false 时跳过相似度分量（此时占位向量只是噪声，不应参与）。
+pub fn score(conn: &Connection, item: &HotItem, profile: &UserProfile, sim_available: bool) -> f32 {
     // 1. 兴趣相似度（取各兴趣中最高的）
-    let he = hot_embedding(conn, &item.id, &item.title);
-    let sim = if profile.interests.is_empty() {
-        0.0
-    } else {
-        profile.interests.iter()
-            .map(|i| {
-                // 兴趣 embedding：优先用持久化的真实向量，缺失则占位降级
-                let ie = i.embedding.clone().unwrap_or_else(|| placeholder_embedding(&i.topic));
-                vector::cosine(&he, &ie) * i.weight
-            })
-            .fold(0.0f32, f32::max)
-    };
+    let sim = if sim_available { interest_similarity(conn, item, profile) } else { 0.0 };
 
     // 2. 热度归一化（同平台内用固定上限近似）
     let heat = normalize_hot(item.hot_value);
@@ -41,7 +45,45 @@ pub fn score(conn: &Connection, item: &HotItem, profile: &UserProfile) -> f32 {
         1.0
     };
 
-    0.6 * sim + 0.2 * heat + 0.15 * fresh + 0.05 * penalty
+    W_SIM * sim + W_HEAT * heat + W_FRESH * fresh + W_PENALTY * penalty
+}
+
+/// 兴趣向量是否可用于相似度打分：至少有一个有权重且已持久化真实向量的兴趣。
+pub fn has_usable_embeddings(profile: &UserProfile) -> bool {
+    profile.interests.iter().any(|i| {
+        i.weight > 0.0 && i.embedding.as_ref().map_or(false, |e| !e.is_empty())
+    })
+}
+
+/// 按当前可用分量把配置阈值折算成等效阈值。
+///
+/// 配置里的 0.6 是"满分 1.0 的 60%"。当 sim 不可用时满分只有 0.4，
+/// 直接与 0.6 比较在数学上不可能成立，因此折算为 0.6 * 0.4 = 0.24。
+pub fn effective_threshold(configured: f32, sim_available: bool) -> f32 {
+    let scale = if sim_available { 1.0 } else { W_HEAT + W_FRESH + W_PENALTY };
+    (configured * scale).clamp(0.0, 1.0)
+}
+
+/// 兴趣相似度：只统计持有真实向量的兴趣，并按全局最大权重归一化。
+///
+/// 权重只表达兴趣之间的相对强弱，不能当作绝对折扣：兴趣初始权重为 0.5 且每日
+/// 衰减 0.99，若直接乘权重，即使完美命中 sim 也只有 0.5 左右，阈值同样不可达。
+fn interest_similarity(conn: &Connection, item: &HotItem, profile: &UserProfile) -> f32 {
+    let max_weight = profile.interests.iter().map(|i| i.weight).fold(0.0f32, f32::max);
+    if max_weight <= 0.0 {
+        return 0.0;
+    }
+    let he = hot_embedding(conn, &item.id, &item.title);
+    profile.interests.iter()
+        .filter_map(|i| {
+            // 缺失真实向量的兴趣不参与：占位向量与真实向量维度不同，余弦恒为 0
+            let ie = i.embedding.as_ref().filter(|e| !e.is_empty())?;
+            if i.weight <= 0.0 {
+                return None;
+            }
+            Some(vector::cosine(&he, ie).max(0.0) * (i.weight / max_weight))
+        })
+        .fold(0.0f32, f32::max)
 }
 
 /// 读取热点 embedding：优先从 hot_embeddings 表取真实向量，
@@ -142,7 +184,7 @@ mod tests {
         // 热点 embedding 为 (1,0)
         HotRepo::set_embedding(&conn, "h1", "zhihu", item.first_seen, &unit_emb(1.0, 0.0)).unwrap();
         let profile = UserProfile::default(); // 无兴趣
-        let s = score(&conn, &item, &profile);
+        let s = score(&conn, &item, &profile, true);
         // sim=0，但 heat+fresh+penalty 仍有分，应在 (0, 阈值) 之间
         assert!(s > 0.0 && s < SCORE_THRESHOLD);
     }
@@ -162,7 +204,7 @@ mod tests {
             last_hit: 0,
             embedding: Some(unit_emb(1.0, 0.0)),
         });
-        let s = score(&conn, &item, &profile);
+        let s = score(&conn, &item, &profile, true);
         // sim=1.0 → 0.6*1.0 = 0.6，加上 heat/fresh/penalty 应超过阈值
         assert!(s >= SCORE_THRESHOLD, "score={s} should be >= threshold");
     }
@@ -181,7 +223,7 @@ mod tests {
             last_hit: 0,
             embedding: Some(unit_emb(0.0, 1.0)),
         });
-        let s = score(&conn, &item, &profile);
+        let s = score(&conn, &item, &profile, true);
         // sim≈0，分数主要靠 heat/fresh，应低于匹配情况
         assert!(s < SCORE_THRESHOLD);
     }
@@ -205,11 +247,11 @@ mod tests {
         });
 
         // 有 ignore 惩罚的分数
-        let s_penalized = score(&conn, &item, &profile);
+        let s_penalized = score(&conn, &item, &profile, true);
 
         // 删掉 ignore 反馈再打分
         conn.execute("DELETE FROM feedback WHERE hot_id = 'h4'", []).unwrap();
-        let s_clean = score(&conn, &item, &profile);
+        let s_clean = score(&conn, &item, &profile, true);
 
         assert!(s_penalized < s_clean, "penalized={s_penalized} should be < clean={s_clean}");
     }
@@ -229,8 +271,8 @@ mod tests {
             topic: "AI".into(), weight: 1.0, last_hit: 0,
             embedding: Some(unit_emb(1.0, 0.0)),
         });
-        let s_fresh = score(&conn, &fresh, &profile);
-        let s_old = score(&conn, &old, &profile);
+        let s_fresh = score(&conn, &fresh, &profile, true);
+        let s_old = score(&conn, &old, &profile, true);
         assert!(s_fresh > s_old, "fresh={s_fresh} should be > old={s_old}");
     }
 
@@ -240,6 +282,64 @@ mod tests {
         assert_eq!(normalize_hot(Some(0)), 0.0);
         // 大热值应接近 1.0
         assert!(normalize_hot(Some(10_000_000)) > 0.8);
+    }
+
+    #[test]
+    fn effective_threshold_is_scaled_when_sim_unavailable() {
+        assert!((effective_threshold(0.6, true) - 0.6).abs() < 1e-6);
+        let scaled = effective_threshold(0.6, false);
+        assert!((scaled - 0.24).abs() < 1e-5, "scaled={scaled}");
+    }
+
+    /// 没有 embedding 时，靠热度+新鲜度也应能过折算后的阈值（修复前永远达不到 0.6）。
+    #[test]
+    fn embedding_less_profile_can_still_announce() {
+        let conn = mem_db();
+        let item = make_hot("h7", "刚出炉的热点", Some(5_000_000), Utc::now().timestamp());
+        HotRepo::upsert(&conn, &item).unwrap();
+        let mut profile = UserProfile::default();
+        profile.interests.push(Interest {
+            topic: "游戏".into(), weight: 0.5, last_hit: 0, embedding: None,
+        });
+        assert!(!has_usable_embeddings(&profile));
+
+        let s = score(&conn, &item, &profile, false);
+        let threshold = effective_threshold(SCORE_THRESHOLD, false);
+        assert!(s >= threshold, "score={s} threshold={threshold}");
+    }
+
+    /// 兴趣权重 0.5 属于常态（初始值 + 每日衰减），归一化后完美命中仍应达到原阈值。
+    #[test]
+    fn weak_interest_weight_still_reaches_threshold() {
+        let conn = mem_db();
+        let item = make_hot("h8", "AI 新模型发布", Some(5_000_000), Utc::now().timestamp());
+        HotRepo::upsert(&conn, &item).unwrap();
+        HotRepo::set_embedding(&conn, "h8", "zhihu", item.first_seen, &unit_emb(1.0, 0.0)).unwrap();
+        let mut profile = UserProfile::default();
+        profile.interests.push(Interest {
+            topic: "AI".into(), weight: 0.5, last_hit: 0, embedding: Some(unit_emb(1.0, 0.0)),
+        });
+        assert!(has_usable_embeddings(&profile));
+
+        let s = score(&conn, &item, &profile, true);
+        assert!(s >= SCORE_THRESHOLD, "score={s} should be >= {SCORE_THRESHOLD}");
+    }
+
+    /// 兴趣没有真实向量时不应拿占位向量凑分数，即使 sim_available 误传为 true。
+    #[test]
+    fn interest_without_vector_contributes_nothing() {
+        let conn = mem_db();
+        let item = make_hot("h9", "AI 新模型发布", Some(5_000_000), Utc::now().timestamp());
+        HotRepo::upsert(&conn, &item).unwrap();
+        HotRepo::set_embedding(&conn, "h9", "zhihu", item.first_seen, &unit_emb(1.0, 0.0)).unwrap();
+        let mut profile = UserProfile::default();
+        profile.interests.push(Interest {
+            topic: "AI".into(), weight: 1.0, last_hit: 0, embedding: None,
+        });
+
+        let with_sim = score(&conn, &item, &profile, true);
+        let without_sim = score(&conn, &item, &profile, false);
+        assert!((with_sim - without_sim).abs() < 1e-6, "sim 不应凭空产生：{with_sim} vs {without_sim}");
     }
 
     #[test]

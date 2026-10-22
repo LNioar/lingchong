@@ -206,9 +206,17 @@
   // ========================================
   let moodResetTimer = null;
   let currentMood = 'idle';
+  let agentPending = false; // 查询进行中：期间情绪不自动恢复
   function setTransientMood(mood, duration = 8000) {
     setMood(mood);
-    if (mood !== 'idle') moodResetTimer = setTimeout(() => setMood('idle'), duration);
+    if (mood !== 'idle') {
+      clearTimeout(moodResetTimer);
+      moodResetTimer = setTimeout(() => {
+        // 仍在查询中时保持当前动作，不自动回到 idle
+        if (agentPending) return;
+        setMood('idle');
+      }, duration);
+    }
   }
 
   function setMood(mood) {
@@ -264,12 +272,11 @@
   });
 
   // 双击召唤：内容由独立的气泡窗口显示，这里只在桌面宠物上做即时反馈
-  let agentPending = false;
   async function triggerAgent() {
     if (window.deskpetMobile) return window.deskpetMobile.triggerAgent();
     if (agentPending) return;
     agentPending = true;
-    setTransientMood('curious');
+    setTransientMood('excited');
     if (!window.__TAURI__ || !window.__TAURI__.core) { agentPending = false; return; }
     try {
       await window.__TAURI__.core.invoke('trigger_agent');

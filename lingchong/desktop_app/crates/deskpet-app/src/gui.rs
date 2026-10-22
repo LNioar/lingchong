@@ -151,25 +151,14 @@ pub(crate) fn set_pet_mood(app: &AppHandle, mood: &str) {
 }
 
 /// 播报：显示气泡窗口并把内容推给它，同时让宠物进入对应情绪。
-pub(crate) fn announce_to_ui(app: &AppHandle, ann: Option<deskpet_agent::AnnounceResult>) {
-    let payload = match ann {
-        Some(a) => serde_json::json!({
-            "hot_id": a.hot.id,
-            "title": a.hot.title,
-            "url": a.source_url,
-            "script": a.script,
-            "mood_hint": a.mood_hint.as_str(),
-        }),
-        None => serde_json::json!({
-            "hot_id": null,
-            "title": "",
-            "url": "",
-            "script": "还没有可播报的热点，可能仍在采集，或候选已被标记为不感兴趣。请联网后稍等片刻再试。",
-            "mood_hint": "idle",
-        }),
-    };
-
-    publish_bubble(app, payload);
+pub(crate) fn announce_to_ui(app: &AppHandle, ann: deskpet_agent::AnnounceResult) {
+    publish_bubble(app, serde_json::json!({
+        "hot_id": ann.hot.id,
+        "title": ann.hot.title,
+        "url": ann.source_url,
+        "script": ann.script,
+        "mood_hint": ann.mood_hint.as_str(),
+    }));
 }
 
 pub(crate) fn show_status(app: &AppHandle, message: &str, mood: &str) {
@@ -266,10 +255,17 @@ pub fn run() {
                                 tauri::async_runtime::spawn(async move {
                                     if let Some(state) = ah.try_state::<Arc<AppState>>() {
                                         let ann = state.run_agent_cycle_force().await;
-                                        if let Some(ref a) = ann {
-                                            state.speak(&a.script).await;
+                                        match ann {
+                                            Some(a) => {
+                                                state.speak(&a.script).await;
+                                                announce_to_ui(&ah, a);
+                                            }
+                                            None => {
+                                                // 无热点时同样用 LLM 回应，并做 excited 动作
+                                                let text = state.idle_reply().await;
+                                                show_status(&ah, &text, "excited");
+                                            }
                                         }
-                                        announce_to_ui(&ah, ann);
                                     }
                                 });
                             }
@@ -314,7 +310,7 @@ pub fn run() {
                     // None（勿扰、静默、无候选）时保持安静，避免每周期弹「暂时没有值得说的热点」。
                     if let Some(a) = state2.run_agent_cycle().await {
                         state2.speak(&a.script).await;
-                        announce_to_ui(&app_handle2, Some(a));
+                        announce_to_ui(&app_handle2, a);
                     }
                     let interval = state2.config.lock().await.general.min_announce_interval_min as u64 * 60;
                     tokio::time::sleep(std::time::Duration::from_secs(interval)).await;

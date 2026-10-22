@@ -144,7 +144,8 @@ pub async fn trigger_agent(
     // 用户主动触发，跳过勿扰/静默/间隔检查
     // Bound the complete cycle, including waiting for another agent cycle.
     // A slow/unreachable model service must not leave the mobile button disabled forever.
-    crate::gui::show_status(&app, "正在联网刷新热点……", "curious");
+    // 双击/主动触发：桌宠做 excited 动作，并弹一句轻量提示（查询期间不自动恢复）
+    crate::gui::show_status(&app, "我看看~", "excited");
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(45),
         state.refresh_and_run_agent(),
@@ -152,11 +153,13 @@ pub async fn trigger_agent(
     .await;
     match result {
         Ok(Ok(Some(announcement))) => {
-            crate::gui::announce_to_ui(&app, Some(announcement));
+            crate::gui::announce_to_ui(&app, announcement);
             Ok(true)
         }
         Ok(Ok(None)) => {
-            crate::gui::show_status(&app, "本次刷新暂无未播报的新热点，稍后再试。", "idle");
+            // 没有可播报热点：不弹固定文案，改由 LLM 生成一句自然回应，此时做 excited 动作
+            let text = state.idle_reply().await;
+            crate::gui::show_status(&app, &text, "excited");
             Ok(true)
         }
         other => {
