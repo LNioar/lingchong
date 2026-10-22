@@ -1,0 +1,24 @@
+rootProject.name = 'DeskPet'
+include ':app'
+
+// Finish loading settings before reporting missing Tauri integration files.
+// An exception during settings evaluation can be masked by the IDE's attempt
+// to read nested build models when the parent's settings are unavailable.
+def missingTauriFiles = [
+    'tauri.settings.gradle',
+    'app/tauri.build.gradle.kts'
+].findAll { !file(it).isFile() }
+
+if (missingTauriFiles.isEmpty()) {
+    apply from: 'tauri.settings.gradle'
+} else {
+    def missingTauriMessage = 'Missing Tauri-generated files: ' +
+        missingTauriFiles.join(', ') + '. ' +
+        'From crates/deskpet-app, run `cargo tauri android dev --features tauri --open`. ' +
+        'If Android environment setup fails, install/configure the Android NDK and ' +
+        'Command-line Tools first. See desktop_app/docs/android-studio.md.'
+    logger.error(missingTauriMessage)
+    gradle.projectsLoaded {
+        throw new GradleException(missingTauriMessage)
+    }
+}

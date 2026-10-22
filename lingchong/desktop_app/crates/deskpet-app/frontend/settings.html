@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeskPet 设置</title>
+  <link rel="stylesheet" href="settings.css">
+  <script src="settings.js" defer></script>
+</head>
+<body>
+  <header><div class="eyebrow">DESKPET · PREFERENCES</div><h1>让陪伴更合你心意</h1><p>调整播报节奏、模型与兴趣偏好。</p></header>
+  <nav aria-label="设置分区"><a href="#general">常规</a><a href="#pet-profile">宠物</a><a href="#llm">模型</a><a href="#fetch">采集</a><a href="#tts">语音</a><a href="#profile">用户画像</a></nav>
+  <form id="settings-form">
+    <fieldset id="general"><legend>常规</legend><p class="hint">勿扰期间暂停主动播报，手动召唤仍可使用。</p>
+      <div class="label-row"><span>勿扰时段</span><button id="add-quiet" type="button" class="secondary">＋ 添加时段</button></div><div id="quiet-list"></div>
+      <label for="announce-interval">最小播报间隔（分钟）<input id="announce-interval" type="number" min="1" step="1" required></label>
+      <label for="threshold">播报阈值 <output id="threshold-value" for="threshold"></output><input id="threshold" type="range" min="0" max="1" step="0.01"></label><p class="hint">越高越挑剔，越低越容易分享热点。</p>
+    </fieldset>
+    <fieldset id="pet-profile"><legend>宠物画像</legend><p class="hint">定义宠物的身份、性格与表达偏好，保存后用于下一次模型回复。回复形式由模型自由发挥。</p>
+      <label for="pet-name">宠物名称<input id="pet-name" required maxlength="80"></label>
+      <label for="pet-personality">性格<textarea id="pet-personality" rows="3" maxlength="4000" placeholder="描述宠物的性格特点"></textarea></label>
+      <label for="pet-speaking-style">表达偏好<textarea id="pet-speaking-style" rows="3" maxlength="4000" placeholder="描述希望的语气、表达习惯"></textarea></label>
+      <label for="pet-background">背景设定（可选）<textarea id="pet-background" rows="3" maxlength="4000" placeholder="宠物的身份、经历或世界观"></textarea></label>
+    </fieldset>
+    <fieldset id="llm"><legend>模型服务</legend>
+      <label for="api-base">API 地址<input id="api-base" type="url" placeholder="https://example.com/v1" required spellcheck="false"></label><p class="hint">服务商提供的兼容 OpenAI 的接口地址，通常以 /v1 结尾。</p>
+      <label for="api-key">API Key<input id="api-key" type="password" autocomplete="new-password" spellcheck="false"></label><p id="key-status" class="hint"></p>
+      <label class="check"><input id="clear-key" type="checkbox">清除已保存的 API Key</label>
+      <label for="model">模型名称<input id="model" required spellcheck="false"></label>
+      <label for="embedding">向量模型（可选）<input id="embedding" spellcheck="false" placeholder="留空关闭"></label><p class="hint">服务商不支持 embeddings 接口时请留空。</p>
+    </fieldset>
+    <fieldset id="fetch"><legend>采集平台</legend>
+      <label for="rsshub">RSSHub 地址<input id="rsshub" type="url" required spellcheck="false"></label><p class="hint">修改 RSSHub 地址后需重启应用。</p>
+      <label for="fetch-default">默认采集间隔（分钟）<input id="fetch-default" type="number" min="1" step="1" required></label>
+      <div class="platform-head"><span>启用平台</span><span>间隔 / 分钟</span></div><div id="platform-list"></div>
+    </fieldset>
+    <fieldset id="tts"><legend>语音</legend><label class="check"><input id="tts-enabled" type="checkbox">启用语音播报</label>
+      <label for="voice">播报音色<select id="voice"><option value="zh-CN-XiaoxiaoNeural">晓晓 · 女声</option><option value="zh-CN-YunxiNeural">云希 · 男声</option><option value="zh-CN-XiaoyiNeural">晓伊 · 女声</option><option value="zh-CN-YunjianNeural">云健 · 男声</option></select></label><p class="hint">语音设置需重启应用后生效。</p>
+    </fieldset>
+    <fieldset id="profile"><legend>用户画像</legend><p class="hint">告诉基尔兽你喜欢什么，反馈也会持续调整兴趣权重。</p>
+      <label for="persona">人物描述<textarea id="persona" rows="3" placeholder="例如：喜欢科技和游戏，希望播报轻松简短。"></textarea></label>
+      <div class="label-row"><span>兴趣主题与权重</span><button id="add-interest" type="button" class="secondary">＋ 添加兴趣</button></div><div id="interest-list"></div>
+    </fieldset>
+    <footer><p id="status" role="status" aria-live="polite">正在加载设置……</p><button id="reload" type="button" class="secondary">重新加载</button><button id="save" type="submit" disabled>保存设置</button></footer>
+  </form>
+</body>
+</html>

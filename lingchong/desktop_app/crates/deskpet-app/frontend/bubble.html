@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>DeskPet Bubble</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;width:100%;background:transparent;overflow:hidden;border:none;outline:none;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;user-select:none;-webkit-user-select:none;}
+  /* 气泡卡片填满整个独立窗口，无留白，因此几乎不需要穿透 */
+  #bubble{position:absolute;inset:0;background:rgba(31,35,66,.97);color:#e8eaf6;border:1px solid #2a2f55;border-radius:12px;padding:10px 14px;font-size:12px;line-height:1.5;box-shadow:0 8px 30px rgba(0,0,0,.45);display:flex;flex-direction:column;word-break:break-word;overflow-wrap:break-word;}
+  #bubble-content{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#626b9b transparent;padding-right:5px;user-select:text;-webkit-user-select:text;}
+  #bubble .title{font-weight:600;color:#fff;margin-bottom:4px;white-space:normal;}
+  #bubble .script{color:#c5c9e8;white-space:pre-wrap;}
+  #bubble a{color:#7c9cff;display:inline-block;margin-top:6px;font-size:11px;text-decoration:none;}
+  #bubble .actions{display:flex;flex:none;gap:6px;padding-top:8px;justify-content:flex-end;}
+  #bubble-content:focus-visible{outline:1px solid #7c9cff;outline-offset:-1px;}
+  #bubble button{border:0;border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer;background:#2a2f55;color:#c5c9e8;transition:background .15s;}
+  #bubble button:hover{background:#3a4080;}
+  #bubble button.like:hover{background:#3a7d44;color:#fff;}
+  #bubble button.dislike:hover{background:#a23b3b;color:#fff;}
+  #bubble button.dismiss:hover{background:#555;}
+</style>
+</head>
+<body>
+<div id="bubble">
+  <div id="bubble-content" tabindex="0" role="region" aria-label="热点完整内容">
+    <div class="title" id="b-title"></div>
+    <div class="script" id="b-script"></div>
+    <a id="b-link" href="#">查看原文 →</a>
+  </div>
+  <div class="actions">
+    <button class="like" data-act="like">喜欢</button>
+    <button class="dislike" data-act="dislike">不感兴趣</button>
+    <button class="dismiss" data-act="dismiss">关闭</button>
+  </div>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const bTitle = $('b-title'), bScript = $('b-script'), bLink = $('b-link');
+  const bubble = $('bubble'), content = $('bubble-content');
+  let currentHotId = null;
+  let hideTimer = null;
+  const T = window.__TAURI__;
+  let hovered = false, focused = false;
+
+  function scheduleHide() {
+    clearTimeout(hideTimer);
+    // Pause while the user is reading, scrolling or using the keyboard.
+    if (!hovered && !focused) hideTimer = setTimeout(onTimeout, 15000);
+  }
+  bubble.addEventListener('pointerenter', () => { hovered = true; scheduleHide(); });
+  bubble.addEventListener('pointerleave', () => { hovered = false; scheduleHide(); });
+  bubble.addEventListener('focusin', () => { focused = true; scheduleHide(); });
+  bubble.addEventListener('focusout', event => { focused = bubble.contains(event.relatedTarget); scheduleHide(); });
+  content.addEventListener('scroll', scheduleHide, { passive: true });
+
+  function show(p) {
+    currentHotId = p.hot_id || null;
+    bTitle.textContent = p.title || '';
+    bScript.textContent = p.script || '';
+    content.scrollTop = 0;
+    if (p.url) { bLink.style.display = 'inline-block'; bLink.dataset.url = p.url; }
+    else { bLink.style.display = 'none'; bLink.dataset.url = ''; }
+    scheduleHide();
+  }
+
+  // 统一反馈入口：仅在有真实热点（hot_id 非空）时上报
+  function sendFeedback(action) {
+    if (T && T.core && currentHotId) {
+      T.core.invoke('feedback', { hotId: currentHotId, action }).catch(() => {});
+    }
+  }
+
+  function onTimeout() {
+    sendFeedback('ignore');
+    hide();
+  }
+
+  function hide() {
+    clearTimeout(hideTimer);
+    if (T && T.core) {
+      T.core.invoke('hide_bubble').catch(() => {});
+    }
+  }
+
+  // 「查看原文」记 click 反馈（正向弱信号），走后端命令用系统浏览器打开
+  bLink.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const url = bLink.dataset.url;
+    if (!url) return;
+    sendFeedback('click');
+    hide();
+    if (T && T.core) {
+      try { await T.core.invoke('open_url', { url }); }
+      catch(err) { console.warn('[open_url] failed:', err); }
+    } else {
+      window.open(url, '_blank');
+    }
+  });
+
+  document.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const action = btn.dataset.act;
+      if (action === 'dismiss') {
+        // 主动关闭记 dismiss（负向弱信号，区别于 like/dislike 的强信号）
+        sendFeedback('dismiss');
+        hide();
+        return;
+      }
+      sendFeedback(action);
+      hide();
+    });
+  });
+
+  // 后端播报时推送内容
+  if (T && T.event) {
+    T.event.listen('bubble:show', e => show(e.payload)).catch(() => {});
+  }
+  // 窗口加载完成后回拉最近一次播报（避免 show 事件早于监听注册）
+  if (T && T.core) {
+    T.core.invoke('bubble_ready').then(p => { if (p) show(p); }).catch(() => {});
+  }
+</script>
+</body>
+</html>

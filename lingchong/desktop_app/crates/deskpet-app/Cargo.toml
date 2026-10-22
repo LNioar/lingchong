@@ -1,0 +1,41 @@
+[package]
+name = "deskpet-app"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "deskpet_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = []
+# 启用 Tauri GUI（需要系统依赖 webkit2gtk-4.1 / gtk3 / libsoup-3.0）
+tauri = ["dep:tauri", "dep:tauri-build"]
+
+[build-dependencies]
+tauri-build = { workspace = true, optional = true }
+
+[dependencies]
+deskpet-core = { path = "../deskpet-core" }
+deskpet-storage = { path = "../deskpet-storage" }
+deskpet-collector = { path = "../deskpet-collector" }
+deskpet-scheduler = { path = "../deskpet-scheduler" }
+deskpet-agent = { path = "../deskpet-agent" }
+deskpet-tts = { path = "../deskpet-tts" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+dirs.workspace = true
+log.workspace = true
+env_logger.workspace = true
+rusqlite.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+reqwest.workspace = true
+tauri = { workspace = true, optional = true }
+
+# Android installs must load the packaged static frontend, including debug APKs.
+# Otherwise `android dev` redirects the WebView to the PC's temporary dev server.
+[target.'cfg(target_os = "android")'.dependencies]
+tauri = { workspace = true, optional = true, features = ["custom-protocol"] }

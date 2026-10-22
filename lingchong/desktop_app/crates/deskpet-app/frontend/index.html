@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>DeskPet</title>
+<link rel="stylesheet" href="mobile.css" />
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;width:100%;background:transparent;overflow:hidden;border:none;outline:none;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;user-select:none;-webkit-user-select:none;}
+  /* 窗口已缩到刚好贴紧宠物；这里居中摆放，四周只留 5px 余量 */
+  #app{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:5px;border:none;outline:none;}
+  /* 宠物容器 */
+  #pet-wrap{position:relative;flex-shrink:0;}
+  /* SVG 模式 */
+  .pet-svg{width:120px;height:120px;cursor:grab;display:block;}
+  .pet-svg:active{cursor:grabbing;}
+  .pet-svg *{transition:transform .25s ease;transform-origin:center;}
+  /* 精灵图模式 */
+  #pet-sprite{width:120px;height:120px;image-rendering:pixelated;image-rendering:crisp-edges;background-repeat:no-repeat;cursor:grab;display:none;position:relative;}
+  #pet-sprite:active{cursor:grabbing;}
+  /* SVG 动画（无精灵图时生效） */
+  .mood-idle .body{animation:breathe 3s ease-in-out infinite;}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+  .mood-happy .body{animation:hop 1.2s ease-in-out infinite;}
+  @keyframes hop{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  .mood-curious .head{animation:tilt 2s ease-in-out infinite;transform-origin:70px 70px;}
+  @keyframes tilt{0%,100%{transform:rotate(0)}50%{transform:rotate(-8deg)}}
+  .mood-excited .body{animation:jump .6s ease-in-out infinite alternate;}
+  .mood-excited .ear{animation:wiggle .4s ease-in-out infinite alternate;}
+  @keyframes jump{from{transform:translateY(0)}to{transform:translateY(-16px)}}
+  @keyframes wiggle{from{transform:rotate(-5deg)}to{transform:rotate(5deg)}}
+  .mood-sleepy .body{animation:sway 4s ease-in-out infinite;}
+  .mood-sleepy .eye{opacity:0;}
+  .mood-sleepy .eye-closed{opacity:1;}
+  @keyframes sway{0%,100%{transform:translateX(0)}50%{transform:translateX(3px)}}
+  .mood-bored .body{animation:slump 5s ease-in-out infinite;}
+  @keyframes slump{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(4px) scale(.98)}}
+  .eye-closed{opacity:0;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="pet-wrap">
+    <!-- 精灵图模式（有切片图时显示） -->
+    <div id="pet-sprite"></div>
+    <!-- SVG 模式（无切片图时 fallback） -->
+    <svg class="pet-svg" viewBox="0 0 140 140" xmlns="http://www.w3.org/2000/svg">
+      <g class="body">
+        <g class="ear" style="transform-origin:45px 45px;">
+          <polygon points="30,55 40,20 58,45" fill="#ff9800"/>
+          <polygon points="36,50 42,30 52,46" fill="#ffcc80"/>
+        </g>
+        <g class="ear" style="transform-origin:95px 45px;">
+          <polygon points="110,55 100,20 82,45" fill="#ff9800"/>
+          <polygon points="104,50 98,30 88,46" fill="#ffcc80"/>
+        </g>
+        <g class="head">
+          <circle cx="70" cy="75" r="42" fill="#ffb74d"/>
+          <g class="eye">
+            <ellipse cx="55" cy="72" rx="5" ry="7" fill="#333"/>
+            <ellipse cx="85" cy="72" rx="5" ry="7" fill="#333"/>
+            <circle cx="57" cy="69" r="1.6" fill="#fff"/>
+            <circle cx="87" cy="69" r="1.6" fill="#fff"/>
+          </g>
+          <g class="eye-closed">
+            <path d="M49 72 Q55 77 61 72" stroke="#333" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <path d="M79 72 Q85 77 91 72" stroke="#333" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </g>
+          <path d="M66 86 L74 86 L70 91 Z" fill="#e65100"/>
+          <path class="mouth" d="M70 91 Q64 97 58 93" stroke="#5d4037" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path class="mouth" d="M70 91 Q76 97 82 93" stroke="#5d4037" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <circle class="blush" cx="46" cy="84" r="5" fill="#ff8a80" opacity="0"/>
+          <circle class="blush" cx="94" cy="84" r="5" fill="#ff8a80" opacity="0"/>
+        </g>
+      </g>
+    </svg>
+  </div>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const petWrap = $('pet-wrap');
+  const petSprite = $('pet-sprite');
+  const petSvg = document.querySelector('.pet-svg');
+
+  // ========================================
+  // 精灵图动画引擎
+  // ========================================
+  // 在 sprites/ 目录下放置切片图，每种情绪对应一个 PNG 文件。
+  // PNG 格式：水平排列的帧序列（strip），透明背景。
+  //
+  // 配置示例：
+  //   idle:    { src: 'sprites/idle.png',    frames: 6, fps: 4  }
+  //   happy:   { src: 'sprites/happy.png',   frames: 6, fps: 8  }
+  //
+  // 可选参数：
+  //   scale:   显示倍数（默认 2，即原图放大2倍）
+  //            例：单帧90x106 → 显示180x212
+  //   w, h:    直接指定显示宽高（优先于 scale）
+  //
+  // 只配置实际存在的图，未配置的情绪自动 fallback 到 SVG 动画。
+
+  const SPRITE_CONFIG = {
+    // 每张图为 8 帧 × 128px；显示尺寸适配 190×222 的宠物窗口。
+    idle:    { src: 'sprites/idle.png',    frames: 8, fps: 4,  w: 180, h: 180 },
+    happy:   { src: 'sprites/happy.png',   frames: 8, fps: 8,  w: 180, h: 180 },
+    curious: { src: 'sprites/curious.png', frames: 8, fps: 6,  w: 180, h: 180 },
+    excited: { src: 'sprites/excited.png', frames: 8, fps: 12, w: 180, h: 180 },
+    sleepy:  { src: 'sprites/sleepy.png',  frames: 8, fps: 3,  w: 180, h: 180 },
+    bored:   { src: 'sprites/bored.png',   frames: 8, fps: 2,  w: 180, h: 180 },
+  };
+
+  let spriteCache = {};
+  let spriteAnimId = null;
+  let useSprite = false;
+  let activeSprite = null; // 当前正在播放的精灵图 mood（用于"无图时保持上一张"）
+
+  async function preloadSprites() {
+    const moods = Object.keys(SPRITE_CONFIG);
+    if (moods.length === 0) return;
+
+    const results = await Promise.allSettled(
+      moods.map(mood => new Promise((resolve, reject) => {
+        const cfg = SPRITE_CONFIG[mood];
+        const img = new Image();
+        img.onload = () => {
+          const frameW = Math.round(img.naturalWidth / cfg.frames);
+          const frameH = img.naturalHeight;
+          // 计算显示尺寸：优先用 w/h，否则用 scale（默认2倍）
+          let dispW, dispH;
+          if (cfg.w && cfg.h) {
+            dispW = cfg.w;
+            dispH = cfg.h;
+          } else {
+            const s = cfg.scale || 2;
+            dispW = frameW * s;
+            dispH = frameH * s;
+          }
+          resolve({ mood, img, cfg, frameW, frameH, dispW, dispH });
+        };
+        img.onerror = () => reject(new Error(cfg.src + ' not found'));
+        img.src = cfg.src;
+      }))
+    );
+
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        const v = r.value;
+        spriteCache[v.mood] = v;
+      }
+    }
+
+    if (Object.keys(spriteCache).length > 0) {
+      useSprite = true;
+      for (const [mood, v] of Object.entries(spriteCache)) {
+        console.log(`[sprite] ${mood}: ${v.frameW}x${v.frameH} ×${v.cfg.scale||1} → ${v.dispW}x${v.dispH}`);
+      }
+    }
+  }
+
+  function startSpriteAnim(mood) {
+    const entry = spriteCache[mood];
+    if (!entry) return false;
+
+    petSprite.style.display = 'block';
+    petSvg.style.display = 'none';
+
+    const { cfg, dispW, dispH } = entry;
+    petSprite.style.width = dispW + 'px';
+    petSprite.style.height = dispH + 'px';
+    petSprite.style.backgroundImage = `url(${cfg.src})`;
+    // 整张图缩放到 (dispW * frames) x dispH
+    petSprite.style.backgroundSize = `${dispW * cfg.frames}px ${dispH}px`;
+
+    let frame = 0;
+    const interval = 1000 / cfg.fps;
+    let lastTime = 0;
+
+    cancelAnimationFrame(spriteAnimId);
+    activeSprite = mood;
+
+    function tick(now) {
+      if (activeSprite !== mood) return; // 只有在仍显示本精灵图时继续
+      if (now - lastTime >= interval) {
+        petSprite.style.backgroundPositionX = `-${frame * dispW}px`;
+        frame = (frame + 1) % cfg.frames;
+        lastTime = now;
+      }
+      spriteAnimId = requestAnimationFrame(tick);
+    }
+    spriteAnimId = requestAnimationFrame(tick);
+    return true;
+  }
+
+  function showSvgFallback() {
+    cancelAnimationFrame(spriteAnimId);
+    spriteAnimId = null;
+    activeSprite = null;
+    petSprite.style.display = 'none';
+    petSvg.style.display = 'block';
+  }
+
+  // ========================================
+  // 情绪切换
+  // ========================================
+  let moodResetTimer = null;
+  let currentMood = 'idle';
+  function setTransientMood(mood, duration = 8000) {
+    setMood(mood);
+    if (mood !== 'idle') moodResetTimer = setTimeout(() => setMood('idle'), duration);
+  }
+
+  function setMood(mood) {
+    clearTimeout(moodResetTimer);
+    moodResetTimer = null;
+    currentMood = mood;
+    petWrap.classList.remove('mood-idle','mood-happy','mood-curious','mood-excited','mood-sleepy','mood-bored');
+    petWrap.classList.add('mood-' + mood);
+    document.querySelectorAll('.blush').forEach(b => b.style.opacity = (mood==='happy'||mood==='excited') ? '0.8' : '0');
+
+    // 精灵图模式
+    if (!useSprite) return;            // 完全无切片图 → 保持 SVG
+    if (spriteCache[mood]) {
+      startSpriteAnim(mood);           // 该情绪有切片图 → 切过去
+    } else if (!activeSprite) {
+      showSvgFallback();               // 无切片图且当前无精灵图在播 → SVG
+    }
+    // 否则：该情绪暂无切片图，但已有精灵图在播 → 保持不变，继续播放上一张
+  }
+
+  // 拖拽：移动超 3px 才触发，不影响双击
+  let mdX = 0, mdY = 0, mdActive = false, isDragging = false;
+  petWrap.addEventListener('mousedown', (e) => {
+    if (window.deskpetMobile) return;
+    if (e.button !== 0) return;
+    mdX = e.clientX; mdY = e.clientY; mdActive = true; isDragging = false;
+  });
+  petWrap.addEventListener('mousemove', (e) => {
+    if (window.deskpetMobile) return;
+    if (!mdActive || isDragging) return;
+    if (Math.abs(e.clientX - mdX) > 3 || Math.abs(e.clientY - mdY) > 3) {
+      isDragging = true;
+      if (window.__TAURI__ && window.__TAURI__.window) {
+        try { window.__TAURI__.window.getCurrentWindow().startDragging(); }
+        catch(err) {}
+      }
+    }
+  });
+  petWrap.addEventListener('mouseup', () => { mdActive = false; });
+
+  // 手动双击检测（两次 click 间隔 < 400ms）
+  let lastClickTime = 0;
+  petWrap.addEventListener('click', (e) => {
+    if (window.deskpetMobile) return;
+    const now = Date.now();
+    const dt = now - lastClickTime;
+    if (dt < 400) {
+      lastClickTime = 0;
+      triggerAgent();
+    } else {
+      lastClickTime = now;
+    }
+  });
+
+  // 双击召唤：内容由独立的气泡窗口显示，这里只在桌面宠物上做即时反馈
+  let agentPending = false;
+  async function triggerAgent() {
+    if (window.deskpetMobile) return window.deskpetMobile.triggerAgent();
+    if (agentPending) return;
+    agentPending = true;
+    setTransientMood('curious');
+    if (!window.__TAURI__ || !window.__TAURI__.core) { agentPending = false; return; }
+    try {
+      await window.__TAURI__.core.invoke('trigger_agent');
+    } catch (err) {
+      setMood('idle');
+      console.warn('trigger_agent failed:', err);
+    } finally {
+      agentPending = false;
+    }
+  }
+
+  let moods = ['idle','happy','curious','excited','sleepy','bored'], mi = 0;
+  petWrap.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    mi = (mi + (e.deltaY > 0 ? 1 : -1) + moods.length) % moods.length;
+    setMood(moods[mi]);
+  });
+
+  // 后端播报 / 反馈时同步情绪
+  if (window.__TAURI__ && window.__TAURI__.event) {
+    try {
+      window.__TAURI__.event.listen('pet:mood', (e) => {
+        if (typeof e.payload === 'string') setTransientMood(e.payload);
+      });
+    } catch (err) {}
+  }
+
+  // === 初始化 ===
+  preloadSprites().then(() => {
+    setMood('idle');
+  });
+</script>
+<script src="mobile.js"></script>
+</body>
+</html>
