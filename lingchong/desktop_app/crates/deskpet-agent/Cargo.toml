@@ -1,0 +1,17 @@
+[package]
+name = "deskpet-agent"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+deskpet-core = { path = "../deskpet-core" }
+deskpet-storage = { path = "../deskpet-storage" }
+reqwest.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+async-trait.workspace = true
+log.workspace = true
+thiserror.workspace = true
+rusqlite.workspace = true

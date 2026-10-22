@@ -1,0 +1,19 @@
+[package]
+name = "deskpet-collector"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+deskpet-core = { path = "../deskpet-core" }
+deskpet-storage = { path = "../deskpet-storage" }
+reqwest.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+sha2.workspace = true
+hex.workspace = true
+async-trait.workspace = true
+log.workspace = true
+thiserror.workspace = true
+rusqlite.workspace = true

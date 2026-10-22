@@ -1,0 +1,11 @@
+[package]
+name = "deskpet-scheduler"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+deskpet-core = { path = "../deskpet-core" }
+tokio.workspace = true
+chrono.workspace = true
+log.workspace = true
+thiserror.workspace = true

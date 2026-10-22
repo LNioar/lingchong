@@ -1,0 +1,11 @@
+[package]
+name = "deskpet-tts"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+deskpet-core = { path = "../deskpet-core" }
+tokio.workspace = true
+log.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
