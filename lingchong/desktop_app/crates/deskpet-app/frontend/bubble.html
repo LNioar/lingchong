@@ -27,6 +27,7 @@
     <div class="title" id="b-title"></div>
     <div class="script" id="b-script"></div>
     <a id="b-link" href="#">查看原文 →</a>
+    <div id="speech-status" role="status" style="font-size:10px;color:#aeb7dc;margin-top:4px" hidden></div>
   </div>
   <div class="actions">
     <button class="like" data-act="like">喜欢</button>
@@ -43,11 +44,15 @@
   let hideTimer = null;
   const T = window.__TAURI__;
   let hovered = false, focused = false;
+  let currentBubbleId = null, speechPending = false;
+  let lastClosedId = null, latestSequence = -1, speechStage = -1;
+  let speechListenerReady = Promise.resolve();
+  let speechPoll = null;
 
   function scheduleHide() {
     clearTimeout(hideTimer);
     // Pause while the user is reading, scrolling or using the keyboard.
-    if (!hovered && !focused) hideTimer = setTimeout(onTimeout, 15000);
+    if (!hovered && !focused && !speechPending) hideTimer = setTimeout(onTimeout, 15000);
   }
   bubble.addEventListener('pointerenter', () => { hovered = true; scheduleHide(); });
   bubble.addEventListener('pointerleave', () => { hovered = false; scheduleHide(); });
@@ -56,13 +61,56 @@
   content.addEventListener('scroll', scheduleHide, { passive: true });
 
   function show(p) {
+    if (p.bubble_id && p.bubble_id === lastClosedId) return;
+    const sequence = p.bubble_id ? Number(p.bubble_id.split('-').at(-1)) : NaN;
+    if (Number.isFinite(sequence)) {
+      if (sequence < latestSequence) return;
+      latestSequence = sequence;
+    }
+    if ((p.bubble_id || null) !== currentBubbleId) speechStage = -1;
+    currentBubbleId = p.bubble_id || null;
     currentHotId = p.hot_id || null;
     bTitle.textContent = p.title || '';
     bScript.textContent = p.script || '';
     content.scrollTop = 0;
     if (p.url) { bLink.style.display = 'inline-block'; bLink.dataset.url = p.url; }
     else { bLink.style.display = 'none'; bLink.dataset.url = ''; }
+    updateSpeech(p);
+    if (currentBubbleId && speechPending && T?.core) {
+      const id = currentBubbleId;
+      // Two animation frames ensure the new text is painted before speech starts.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        speechListenerReady.then(() => {
+          if (currentBubbleId === id && speechPending) return T.core.invoke('bubble_presented', {bubbleId:id});
+        }).catch(() => {
+          if (currentBubbleId === id) updateSpeech({bubble_id:id,speech_state:'failed',speech_error:'语音服务尚未就绪'});
+        });
+      }));
+    }
+  }
+
+  function updateSpeech(p) {
+    if ((p.bubble_id || null) !== currentBubbleId) return;
+    const stage = {queued:0,synthesizing:1,playing:2,completed:3,cancelled:3,failed:3}[p.speech_state] ?? -1;
+    if (stage < speechStage) return;
+    speechStage = stage;
+    speechPending = ['queued','synthesizing','playing'].includes(p.speech_state);
+    const labels = {queued:'正在准备语音…',synthesizing:'正在合成语音…',playing:'正在朗读…'};
+    const status = $('speech-status');
+    status.textContent = labels[p.speech_state] || (p.speech_state === 'failed' ? '语音暂不可用：' + (p.speech_error || '请检查网络和语音依赖') : '');
+    status.hidden = !status.textContent;
     scheduleHide();
+    clearTimeout(speechPoll);
+    if (speechPending && currentBubbleId && T?.core) {
+      const id = currentBubbleId;
+      // Recover a missed completion event without replaying or replacing text.
+      speechPoll = setTimeout(async () => {
+        try {
+          const cached = await T.core.invoke('bubble_ready');
+          if (currentBubbleId === id && cached?.bubble_id === id) updateSpeech(cached);
+        } catch (_) { /* The visible bubble remains manually closable. */ }
+      }, 2000);
+    }
   }
 
   // 统一反馈入口：仅在有真实热点（hot_id 非空）时上报
@@ -73,14 +121,20 @@
   }
 
   function onTimeout() {
+    if (speechPending) return;
     sendFeedback('ignore');
     hide();
   }
 
   function hide() {
     clearTimeout(hideTimer);
+    clearTimeout(speechPoll);
+    const id = currentBubbleId;
+    lastClosedId = id;
+    currentBubbleId = null;
+    speechPending = false;
     if (T && T.core) {
-      T.core.invoke('hide_bubble').catch(() => {});
+      T.core.invoke('hide_bubble', id ? {bubbleId:id} : {}).catch(() => {});
     }
   }
 
@@ -99,7 +153,7 @@
     }
   });
 
-  document.querySelectorAll('button').forEach(btn => {
+  document.querySelectorAll('button[data-act]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const action = btn.dataset.act;
       if (action === 'dismiss') {
@@ -115,6 +169,7 @@
 
   // 后端播报时推送内容
   if (T && T.event) {
+    speechListenerReady = T.event.listen('bubble:speech', e => updateSpeech(e.payload)).catch(() => {});
     T.event.listen('bubble:show', e => show(e.payload)).catch(() => {});
   }
   // 窗口加载完成后回拉最近一次播报（避免 show 事件早于监听注册）

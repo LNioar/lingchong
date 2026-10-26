@@ -60,6 +60,18 @@ pub struct TtsConfig {
     pub provider: String,
     pub voice: String,
     pub enabled: bool,
+    /// Windows managed Edge runtime. Missing in old configs; old settings keep it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub edge: Option<EdgeRuntimeConfig>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EdgeRuntimeConfig {
+    pub python_path: Option<String>,
+    pub mpv_path: Option<String>,
+    /// None uses the system HTTP proxy; an empty string explicitly uses direct access.
+    pub proxy: Option<String>,
 }
 
 impl Default for GeneralConfig {
@@ -121,6 +133,7 @@ impl Default for TtsConfig {
             provider: "edge".into(),
             voice: "zh-CN-XiaoxiaoNeural".into(),
             enabled: true,
+            edge: None,
         }
     }
 }

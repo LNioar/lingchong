@@ -13,7 +13,7 @@ async function fixture() {
     if (!elements.has(id)) {
       const events = new Map(), classes = new Set();
       elements.set(id, {
-        style:{}, hidden:true, disabled:false, value:'', textContent:'', append:()=>{},
+        style:{}, hidden:true, disabled:false, value:'', textContent:'', append:()=>{}, setAttribute:()=>{},
         classList:{add:(...names)=>names.forEach(name=>classes.add(name)),remove:(...names)=>names.forEach(name=>classes.delete(name)),toggle:()=>{}},
         addEventListener(type, callback) { if (!events.has(type)) events.set(type, []); events.get(type).push(callback); },
         fire(type, event = {}) { for (const callback of events.get(type) || []) callback(event); },
@@ -88,5 +88,22 @@ async function fixture() {
   f.emit('bubble:show',{mood_hint:'idle',script:'还没有可播报的热点'});
   f.resolve(); await f.flush(); assert.equal(f.mood(),'idle');
   assert.match(f.el('mobile-bubble-text').textContent,/还没有/);
+  f.el('bubble-close').fire('click');
+  assert.equal(f.el('companion-status').textContent,'在你身边');
+  f.el('refresh-hotspots').fire('click'); await f.flush();
+  assert.equal(f.calls(),4,'single-tap refresh button starts a request');
+  assert.equal(f.el('refresh-hotspots').disabled,true);
+  assert.equal(f.el('companion-status').textContent,'正在找新鲜事…');
+  f.el('refresh-hotspots').fire('click'); await f.flush();
+  assert.equal(f.calls(),4,'button and double taps share the pending guard');
+  f.el('mobile-bubble').scrollTop = 100;
+  f.emit('bubble:show',{script:'新的消息'});
+  assert.equal(f.el('mobile-bubble').scrollTop,0);
+  f.resolve(); await f.flush();
+  assert.equal(f.el('refresh-hotspots').disabled,false);
+  assert.equal(f.el('companion-status').textContent,'有话想对你说');
+  f.el('pet-wrap').fire('keydown',{key:'Enter',preventDefault:()=>{}}); await f.flush();
+  assert.equal(f.calls(),5,'keyboard activation works');
+  f.resolve(); await f.flush();
   console.log('PASS: double tap, pending guard, timed mood reset, timer replacement, close, error, empty result.');
 })().catch(error=>{ console.error(error); process.exitCode=1; });

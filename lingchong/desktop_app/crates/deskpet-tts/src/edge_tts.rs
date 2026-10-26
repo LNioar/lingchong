@@ -24,6 +24,10 @@ impl EdgeTts {
 #[async_trait]
 impl TtsProvider for EdgeTts {
     async fn speak(&self, text: &str) -> Result<()> {
+        let text = crate::spoken_prefix(text);
+        if text.is_empty() {
+            return Ok(());
+        }
         // 检查 edge-tts 是否可用
         let check = tokio::process::Command::new("edge-tts")
             .arg("--version")

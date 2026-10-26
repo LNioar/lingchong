@@ -1,14 +1,16 @@
 (() => {
   if (!/Android|iPhone|iPad/i.test(navigator.userAgent)) return;
   document.documentElement.classList.add('is-mobile');
+  if (/Android/i.test(navigator.userAgent)) document.documentElement.classList.add('is-android');
   document.body.insertAdjacentHTML('beforeend', `
-    <header id="mobile-header" class="mobile-ui"><div><strong>DeskPet</strong><small>你的热点小伙伴</small></div><button id="open-settings" type="button">设置</button></header>
+    <header id="mobile-header" class="mobile-ui"><div><strong id="mobile-pet-name">DeskPet</strong><small id="companion-status" role="status">在你身边</small></div><button id="open-settings" type="button" aria-label="打开宠物设置"><span aria-hidden="true">⚙</span><span class="settings-label">设置</span></button></header>
     <main id="mobile-stage" class="mobile-ui"></main>
     <p id="mobile-hint" class="mobile-ui">双击基尔兽，听听今天的新鲜事</p>
     <section id="mobile-bubble" class="mobile-ui" aria-live="polite" aria-label="宠物气泡" hidden>
       <button id="bubble-close" type="button" aria-label="关闭气泡">×</button><h2 id="mobile-bubble-title"></h2><p id="mobile-bubble-text"></p>
       <div id="bubble-feedback" hidden><button type="button" data-feedback="like">喜欢</button><button type="button" data-feedback="dislike">不感兴趣</button></div>
     </section>
+    <footer id="companion-controls" class="mobile-ui"><span>陪伴每一个日常</span><button id="refresh-hotspots" class="primary" type="button" hidden>听点新鲜事 <span aria-hidden="true">↗</span></button></footer>
     <dialog id="settings-dialog" aria-labelledby="settings-title">
       <form id="settings-form"><h2 id="settings-title">模型与宠物设置</h2><p class="subtitle">配置模型服务与宠物性格，保存后用于下一次模型回复。</p>
         <label class="field" for="pet-name">宠物名称<input id="pet-name" required maxlength="80"></label>
@@ -24,15 +26,23 @@
       </form>
     </dialog>`);
   const el = id => document.getElementById(id);
-  // Keep the pet and bubble in normal flow: long text cannot grow over the pet.
+  // Separate layout cells keep long bubble text from covering the pet.
   el('mobile-stage').append(el('app'), el('mobile-hint'), el('mobile-bubble'));
   const T = window.__TAURI__;
   const invoke = (name, args) => T?.core ? T.core.invoke(name, args) : Promise.reject(new Error('应用服务尚未就绪，请重新打开应用。'));
   let pending = false, currentHotId = null;
   let petName = '基尔兽';
+  function renderPetName() {
+    el('mobile-pet-name').textContent = petName;
+    el('mobile-hint').textContent = `双击${petName}，看看今天的新鲜事`;
+    el('pet-wrap').tabIndex = 0;
+    el('pet-wrap').setAttribute('role', 'button');
+    el('pet-wrap').setAttribute('aria-label', `和${petName}一起听新鲜事`);
+  }
+  renderPetName();
   invoke('get_settings').then(settings => {
     petName = settings.pet.name;
-    el('mobile-hint').textContent = `双击${petName}，听听今天的新鲜事`;
+    renderPetName();
   }).catch(() => {});
   function showBubble(payload) {
     currentHotId = payload.hot_id || null;
@@ -40,12 +50,17 @@
     el('mobile-bubble-text').textContent = payload.script || '暂时没有值得说的热点～';
     el('bubble-feedback').hidden = !currentHotId;
     el('mobile-bubble').hidden = false;
+    el('mobile-bubble').scrollTop = 0;
+    document.documentElement.classList.add('has-bubble');
+    el('companion-status').textContent = pending ? '正在找新鲜事…' : '有话想对你说';
     if (payload.mood_hint) setTransientMood(payload.mood_hint);
   }
   function dismissBubble(action) {
     const hotId = currentHotId;
     currentHotId = null;
     el('mobile-bubble').hidden = true;
+    document.documentElement.classList.remove('has-bubble');
+    el('companion-status').textContent = pending ? '正在找新鲜事…' : '在你身边';
     setMood('idle');
     if (hotId) invoke('feedback', { hotId, action }).catch(() => {});
   }
@@ -59,6 +74,8 @@
   async function triggerAgent() {
     if (pending) return;
     pending = true;
+    el('refresh-hotspots').disabled = true;
+    el('refresh-hotspots').textContent = '正在找新鲜事…';
     setMood('curious');
     showBubble({ script: '正在联网刷新热点……' });
     try {
@@ -69,11 +86,15 @@
       setMood('idle');
     } finally {
       pending = false;
+      el('refresh-hotspots').disabled = false;
+      el('refresh-hotspots').textContent = '听点新鲜事 ↗';
+      el('companion-status').textContent = el('mobile-bubble').hidden ? '在你身边' : '有话想对你说';
       // Also recover if a successful IPC response arrives without a UI event.
       setTransientMood(currentMood);
     }
   }
   window.deskpetMobile = { triggerAgent };
+  el('refresh-hotspots').addEventListener('click', triggerAgent);
   el('bubble-close').addEventListener('click', () => dismissBubble('dismiss'));
   el('bubble-feedback').addEventListener('click', event => {
     const action = event.target.closest('[data-feedback]')?.dataset.feedback;
@@ -82,6 +103,12 @@
   // Pointer events work for both Android touch taps and desktop mouse testing.
   let firstTap = null, down = null;
   const pet = el('pet-wrap');
+  pet.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      triggerAgent();
+    }
+  });
   pet.addEventListener('pointerdown', event => {
     if (!event.isPrimary || event.button !== 0) return;
     down = { x: event.clientX, y: event.clientY, time: Date.now(), id: event.pointerId };
@@ -109,7 +136,7 @@
   }
   function renderSettings(settings) {
     petName = settings.pet.name;
-    el('mobile-hint').textContent = `双击${petName}，听听今天的新鲜事`;
+    renderPetName();
     el('pet-name').value = settings.pet.name;
     el('pet-personality').value = settings.pet.personality;
     el('pet-speaking-style').value = settings.pet.speaking_style;

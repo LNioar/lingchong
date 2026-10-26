@@ -39,3 +39,4 @@ tauri = { workspace = true, optional = true }
 # Otherwise `android dev` redirects the WebView to the PC's temporary dev server.
 [target.'cfg(target_os = "android")'.dependencies]
 tauri = { workspace = true, optional = true, features = ["custom-protocol"] }
+

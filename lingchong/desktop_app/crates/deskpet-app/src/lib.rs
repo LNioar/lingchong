@@ -7,6 +7,8 @@ mod runtime;
 
 #[cfg(feature = "tauri")]
 mod gui;
+#[cfg(all(feature = "tauri", target_os = "windows"))]
+mod windows_speech;
 #[cfg(feature = "tauri")]
 mod ipc;
 #[cfg(any(feature = "tauri", test))]

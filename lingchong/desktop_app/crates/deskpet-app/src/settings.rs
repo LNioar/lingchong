@@ -57,7 +57,7 @@ pub fn validate_quiet_hours(hours: &[String]) -> Result<(), String> {
 }
 
 impl ConfigUpdate {
-    pub fn apply(self, config: &mut AppConfig) -> Result<(), String> {
+    pub fn apply(mut self, config: &mut AppConfig) -> Result<(), String> {
         validate_quiet_hours(&self.general.quiet_hours)?;
         if self.general.min_announce_interval_min < 1 {
             return Err("播报间隔至少为 1 分钟".into());
@@ -92,6 +92,9 @@ impl ConfigUpdate {
         candidate.general = self.general;
         candidate.fetch = self.fetch;
         candidate.fetch.rsshub_endpoint = candidate.fetch.rsshub_endpoint.trim().trim_end_matches('/').into();
+        if self.tts.edge.is_none() {
+            self.tts.edge = candidate.tts.edge.clone();
+        }
         candidate.tts = self.tts;
         *config = candidate;
         Ok(())
@@ -249,6 +252,22 @@ mod tests {
         }
         assert!(validate_quiet_hours(&[]).is_ok());
         assert!(validate_quiet_hours(&["23:00-08:00".into(), "00:00-00:30".into()]).is_ok());
+    }
+
+    #[test]
+    fn legacy_settings_submission_preserves_edge_runtime() {
+        let mut config = AppConfig::default();
+        config.tts.edge = Some(crate::config::EdgeRuntimeConfig {
+            python_path: Some("C:/portable/python.exe".into()),
+            mpv_path: Some("C:/portable/mpv.exe".into()),
+            proxy: Some("http://127.0.0.1:7890".into()),
+        });
+        let mut patch = full_update(&config);
+        patch.tts.edge = None; // An old settings page only submits existing fields.
+        patch.tts.voice = "zh-CN-YunxiNeural".into();
+        patch.apply(&mut config).unwrap();
+        assert_eq!(config.tts.edge.as_ref().unwrap().proxy.as_deref(), Some("http://127.0.0.1:7890"));
+        assert_eq!(config.tts.voice, "zh-CN-YunxiNeural");
     }
 
     fn update(key: Option<&str>) -> SettingsUpdate {

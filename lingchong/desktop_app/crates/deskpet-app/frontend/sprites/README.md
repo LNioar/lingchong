@@ -1,10 +1,14 @@
 # 精灵图切片说明
 
+更新日期：2026-10-24。资源目录为 `desktop_app/crates/deskpet-app/frontend/sprites/`，配置入口是同级上层 `index.html` 的 `SPRITE_CONFIG`。完整位置见 [项目结构](../../../../docs/project-structure.md)。当前六种情绪均已配置为 8 帧、180 × 180 显示尺寸，实际素材以 PNG 和配置为准；以下其他帧数仅是格式示例。
+
 ## 文件放置
 
 将 PNG 文件放在此目录（`frontend/sprites/`）下。
 
 ## 文件格式
+
+Android 的 `mobile.css` 另对宠物容器缩放以适配头部屏幕，不改变精灵文件的帧数或资源。
 
 每个 PNG 是一张**水平排列的帧序列**（sprite strip），透明背景。
 
@@ -21,15 +25,15 @@
 |---|---|---|
 | idle.png | 待机 | 默认状态 |
 | happy.png | 开心 | 用户点"喜欢" |
-| curious.png | 好奇 | 播报热点时 |
+| curious.png | 好奇 | 手动刷新等待等临时状态 |
 | excited.png | 兴奋 | 高分热点 |
-| sleepy.png | 困倦 | 深夜/勿扰 |
+| sleepy.png | 困倦 | 可用动画状态；当前不保证深夜/勿扰自动触发 |
 | bored.png | 无聊 | 用户点"不感兴趣" |
 
 ## 启用方法
 
 1. 把 PNG 文件放入此目录
-2. 编辑 `index.html` 中的 `SPRITE_CONFIG`，取消注释对应行
+2. 编辑 `index.html` 中已启用的 `SPRITE_CONFIG`，修改对应资源路径和参数
 3. 设置 `frames`（帧数）、`fps`（播放速度）、`scale`（放大倍数）
 
 ```js
@@ -65,4 +69,3 @@ const SPRITE_CONFIG = {
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/split-guilmon-sprites.ps1
 ```
-

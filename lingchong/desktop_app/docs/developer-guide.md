@@ -1,173 +1,89 @@
 # 开发者指南
 
-## 环境准备
+更新日期：2026-10-24。默认工作目录为 `desktop_app/`，完整布局见 [项目结构](project-structure.md)。同级备份目录不参与构建。
 
-```bash
-# Rust
-rustup toolchain install stable   # 需要 1.75+
+## 环境与源码入口
 
-# Linux 系统依赖（Tauri GUI 模式）
-sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libayatana-appindicator3-dev
-```
+使用当前锁定依赖支持的 Rust 工具链。workspace 虽声明 `rust-version = "1.75"`，但不代表所有锁定的 Tauri 依赖能在该版本编译；以实际依赖要求和构建结果为准。
 
-## 项目布局
+Windows GUI 需要对应 Rust 工具链的编译工具及 WebView2；Linux GUI 需要 WebKitGTK、GTK3、libsoup 和托盘依赖。Android 还需要 Tauri CLI 2、JDK、SDK、NDK 与对应 Rust target。具体 Android 本机配置和排障见 [Android 工程指南](android-studio.md)。前端为静态 HTML/CSS/JavaScript，没有 npm 构建步骤；前端回归脚本使用 Node.js，数据库分析脚本使用 Python。
 
-```
-crates/
-├── deskpet-core/        # 共享类型与 trait
-├── deskpet-storage/     # SQLite 存储
-├── deskpet-collector/   # 采集与去重
-├── deskpet-scheduler/   # 调度与打扰策略
-├── deskpet-agent/       # 打分与口播
-├── deskpet-tts/         # TTS
-├── deskpet-app/         # 入口（config/logging/runtime/ipc/gui/headless）
-└── deskpet-dump/        # 调试工具
-```
+`src/main.rs` 调用 `deskpet_app_lib::run()`；`src/lib.rs` 提供共享入口，并按 `tauri` feature 选择 GUI 或 headless。Android 通过同一个库的移动端入口启动。
 
-## 构建
+## 从 workspace 根目录运行
 
-```bash
-# 全部 crate
-cargo build --workspace
-
-# 仅 headless
-cargo build -p deskpet-app
-
-# Tauri GUI
-cargo build -p deskpet-app --features tauri
-
-# 发布构建
-cargo build --workspace --release
-```
-
-## 运行
-
-```bash
-# headless（后台服务模式）
+```powershell
+# 无 GUI 的后台模式
 cargo run -p deskpet-app
 
-# Tauri GUI
+# 桌面宠物 GUI
 cargo run -p deskpet-app --features tauri
 
-# 无 GUI 时验证核心逻辑（推荐开发调试）
-cargo run -p deskpet-app 2>&1 | grep -E "fetched|ANNOUNCE|tick"
-```
+# 编译检查
+cargo check -p deskpet-app --features tauri
 
-## 测试
+# workspace 构建
+cargo build --workspace
 
-```bash
-# 全部测试
-cargo test --workspace
-
-# 单 crate
-cargo test -p deskpet-agent
-cargo test -p deskpet-scheduler
-
-# 详细输出
-cargo test -p deskpet-collector -- --nocapture
-```
-
-当前测试覆盖（48 个）：
-
-| 模块 | 测试数 | 覆盖点 |
-|---|---|---|
-| core | 7 | 画像增删/权重边界/衰减/兴趣筛选/反馈 delta |
-| collector | 8 | 去重 New/Exists/跨平台同事件/无emb/24h窗口/精确优先 |
-| agent | 14 | 打分公式（相似度/热度/新鲜度/惩罚）+ LLM降级/mock/模板/工具溯源 |
-| scheduler | 11 | 勿扰时段/最小间隔/静默/综合判断 |
-| storage | 8 | dislike排除/过期清理/孤儿向量/反馈过期/日志过期 |
-
-## 打包
-
-```bash
-# Tauri 打包（生成安装包）
-cargo tauri build
-
-# 仅构建二进制
+# GUI 发布二进制，不等同于安装包
 cargo build -p deskpet-app --features tauri --release
 ```
 
-产物位于 `target/release/bundle/`。
+## 测试与文档检查
 
-## 调试
+```powershell
+cargo test --workspace
+cargo test -p deskpet-agent
+cargo test -p deskpet-app --lib
 
-### 查看数据库内容
-
-```bash
-cargo run -p deskpet-dump
+node scripts/test-pet-ui.cjs
+node scripts/test-bubble-ui.cjs
+node --check crates/deskpet-app/frontend/mobile.js
+node --check crates/deskpet-app/frontend/settings.js
+node scripts/check-docs.cjs
 ```
 
-导出 `hot_items`、`feedback`、`fetch_logs` 为 JSON。
+仅在依赖缓存完整时添加 `--offline`。现有前端测试用最小 DOM 与模拟时钟验证交互，不代替 WebView 渲染、Android 生命周期或设备触摸验收。不要通过固定测试总数判断版本是否完整。
 
-### 日志
+## Windows 打包
 
-日志同时输出到 stderr 和文件：`~/.local/share/deskpet/deskpet.log`
+以下命令先进入应用 crate；该目录包含 `tauri.conf.json`。
 
-设置日志级别：
-```bash
-RUST_LOG=debug cargo run -p deskpet-app
+```powershell
+Set-Location crates/deskpet-app
+cargo tauri build --features tauri --bundles msi
 ```
 
-### 常用日志关键词
+默认 MSI 输出到 workspace 的 `target/release/bundle/msi/`，以构建日志为准。首次使用需准备 Tauri CLI，打包工具可能另外下载。详细依赖与排障见 [Windows 指南](windows-guide.md)。
 
-| 关键词 | 含义 |
-|---|---|
-| `[scheduler] fetch tick` | 定时采集触发 |
-| `[scheduler] agent tick` | Agent 周期触发 |
-| `[scheduler] daily tick` | 每日维护触发 |
-| `[zhihu] fetched N new items` | 采集结果 |
-| `[agent] top candidate score=` | 打分结果 |
-| `[agent] below threshold, skip` | 低于阈值跳过 |
-| `[agent] LLM failed, fallback to template` | LLM 降级 |
-| `[watcher] config changed, reloading` | 配置热重载 |
-| `[feedback] ... adjusted N topics` | 反馈回写画像 |
-| `[daily] maintenance complete` | 每日维护完成 |
+## Android 构建与入口
 
-## 扩展开发
+从 workspace 根目录开始，进入应用 crate：
 
-### 新增采集平台
+```powershell
+Set-Location crates/deskpet-app
 
-1. 在 `deskpet-collector/src/adapters/` 新增 `XxxAdapter`，实现 `HotAdapter` trait
-2. 在 `manager.rs` 的 `AdapterManager` 中注册
-3. 在 `config.rs` 默认 `platforms` 中添加配置
-4. 在 `runtime.rs` 中 `collector.register(Arc::new(XxxAdapter))`
+# 调试 / 启动 Android Studio，保持 CLI 进程运行
+cargo tauri android dev --features tauri --open
 
-### 新增 TTS 提供方
-
-1. 在 `deskpet-tts/src/` 新增实现 `TtsProvider` trait
-2. 在 `runtime.rs` 中根据 `config.tts.provider` 选择
-
-### 新增情绪状态
-
-1. 在 `deskpet-core/src/mood.rs` 添加枚举值
-2. 在 `frontend/index.html` 中添加对应 CSS 动画
-3. 在 `orchestrator.rs` 中根据分数映射情绪
-
-## 故障排查
-
-### 编译错误：`Cannot block the current thread from within a runtime`
-
-不要在 async runtime 内调用 `tokio::sync::Mutex::blocking_lock()`。间隔类共享状态使用 `std::sync::Mutex`。
-
-### Tauri 构建：`webkit2gtk` 相关错误
-
-安装系统依赖：
-```bash
-sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libayatana-appindicator3-dev
+# 生成 Android APK
+cargo tauri android build --features tauri --apk
 ```
 
-### 采集全部失败
+已有工程为 `crates/deskpet-app/gen/android/`，请勿重新初始化覆盖项目定制。Gradle APK 通常在该工程的 `app/build/outputs/apk/` 下；按目标架构和构建变体查找，以本次成功构建日志为准。前端静态资源来自 `frontend/`，Android 启用 `custom-protocol` 使用包内资源；实际联网采集仍需网络。
 
-- 检查网络连接（沙箱环境可能限制外网）
-- 微博等平台可能有反爬，会触发重试 + RSSHub 兜底
-- 查看 `fetch_logs` 表获取详细错误
+当前 Activity 由 Manifest 声明横屏，MainActivity 负责沉浸式系统栏与前台亮屏。界面主要修改 `mobile.css` / `mobile.js`，不应只修改 APK 或 Gradle 中间目录。
 
-### 不播报
+## 调试与数据
 
-- 检查 `quiet_hours` 是否覆盖当前时间
-- 检查画像是否有兴趣（无兴趣时 sim=0，难达阈值）
-- 查看 `[agent] below threshold, skip` 日志，可临时调低阈值验证
+- 配置、日志、数据库通过 `src/paths.rs` 定位；Windows 通常为 `%APPDATA%\deskpet\`，Android 由启动入口注入应用私有目录。
+- `scripts/diagnose-announce.ps1`、`scripts/analyze-database.py` 可辅助排查；运行前查看脚本参数和本机路径。
+- `cargo run -p deskpet-dump` 只导出知乎和 B站各 Top10 热点，不是完整数据库备份或反馈/日志导出。
+- 日志检索可关注 `[scheduler]`、`[agent]`、`[watcher]`、`[feedback]`。日志可能含请求和画像内容。
+- `.tools/`、`diagnostics/` 为本地工具与快照，不属于可复现构建的必需依赖。
 
-### embedding 不生效
+## 修改功能时同步维护
 
-确认 `config.toml` 中 `llm.api_key` 已配置（或 `DESKPET_LLM_KEY` 环境变量）。未配置时日志会显示 `embedding disabled (placeholder fallback)`。
+新增采集平台需同时检查 collector 的适配器和 manager、app 默认配置、runtime 注册、设置验证与平台选项；新增配置需检查 DTO、持久化、旧配置兼容与热更新范围；新增情绪需检查 core 枚举、前端资源配置和业务触发。
+
+交付前分别核对源码测试、安装包生成、设备安装和实际行为，不将其中一步通过等同于全部完成。功能与限制同步到 [产品说明书](user-manual.md)、[实现状态](../implementation-status.md)；规划维护在 [路线图](roadmap.md)。

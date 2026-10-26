@@ -159,7 +159,7 @@ pub async fn trigger_agent(
         Ok(Ok(None)) => {
             // 没有可播报热点：不弹固定文案，改由 LLM 生成一句自然回应，此时做 excited 动作
             let text = state.idle_reply().await;
-            crate::gui::show_status(&app, &text, "excited");
+            crate::gui::show_reply(&app, &text, "excited");
             Ok(true)
         }
         other => {
@@ -184,10 +184,20 @@ pub async fn silence_for(
 
 #[tauri::command]
 pub async fn tts_speak(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
     text: String,
 ) -> Result<bool, String> {
-    state.speak(&text).await;
+    #[cfg(target_os = "windows")]
+    {
+        let _ = state;
+        crate::gui::show_reply(&app, &text, "curious");
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        state.speak(&text).await;
+    }
     Ok(true)
 }
 
@@ -235,11 +245,28 @@ fn open_in_browser(url: &str) -> std::io::Result<()> {
 
 /// 隐藏气泡窗口（气泡自动超时/点击关闭时调用）。
 #[tauri::command]
-pub async fn hide_bubble(app: tauri::AppHandle) -> Result<bool, String> {
+pub async fn hide_bubble(app: tauri::AppHandle, bubble_id: Option<String>) -> Result<bool, String> {
+    let mut last = crate::gui::LAST_BUBBLE.lock().map_err(|_| "气泡状态不可用")?;
+    if bubble_id.as_deref().is_some_and(|id| last.as_ref().and_then(|p| p["bubble_id"].as_str()) != Some(id)) {
+        return Ok(false);
+    }
+    #[cfg(target_os = "windows")]
+    crate::windows_speech::stop(&app, bubble_id.as_deref());
+    *last = None;
     if let Some(w) = app.get_webview_window("bubble") {
         let _ = w.hide();
     }
     Ok(true)
+}
+
+/// Acknowledge that the bubble is painted; this never restarts an old task.
+#[tauri::command]
+pub async fn bubble_presented(app: tauri::AppHandle, bubble_id: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    crate::windows_speech::presented(&app, &bubble_id);
+    #[cfg(not(target_os = "windows"))]
+    let _ = (app, bubble_id);
+    Ok(())
 }
 
 /// 气泡窗口加载完成后回拉最近一次播报内容（避免 show 与 listen 的竞态丢事件）。

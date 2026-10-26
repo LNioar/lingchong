@@ -3,6 +3,8 @@
   const T = window.__TAURI__;
   const invoke = (command, args) => T.core.invoke(command, args);
   const platforms = { zhihu:'知乎', bilibili:'哔哩哔哩', weibo:'微博', rsshub:'RSSHub', douyin:'抖音', xiaohongshu:'小红书' };
+  const announceIntervals = [60, 45, 30];
+  let announceIntervalChanged = false;
   let config, profile, busy = false, dirty = false, generation = 0;
   function status(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
   function removeButton(row, label) {
@@ -30,7 +32,10 @@
     $('pet-speaking-style').value = config.pet.speaking_style;
     $('pet-background').value = config.pet.background;
     $('quiet-list').replaceChildren(); config.general.quiet_hours.forEach(quietRow);
-    $('announce-interval').value = config.general.min_announce_interval_min;
+    const savedInterval = config.general.min_announce_interval_min;
+    $('announce-interval').value = announceIntervals.reduce((nearest, minutes) =>
+      Math.abs(minutes - savedInterval) < Math.abs(nearest - savedInterval) ? minutes : nearest);
+    announceIntervalChanged = false;
     $('threshold').value = config.general.announce_threshold; $('threshold-value').value = Number($('threshold').value).toFixed(2);
     $('api-base').value = config.llm.api_base; $('model').value = config.llm.model; $('embedding').value = config.llm.embedding_model || '';
     $('api-key').value = ''; $('api-key').disabled = false; $('api-key').placeholder = config.has_api_key ? '已配置，留空保留原 Key' : '请输入 API Key';
@@ -66,6 +71,7 @@
     finally { busy = false; $('save').disabled = !config; $('reload').disabled = false; }
   }
   $('settings-form').addEventListener('input', () => { dirty = true; });
+  $('announce-interval').addEventListener('change', () => { announceIntervalChanged = true; dirty = true; });
   $('threshold').addEventListener('input', () => { $('threshold-value').value = Number($('threshold').value).toFixed(2); });
   $('clear-key').onchange = () => { $('api-key').disabled = $('clear-key').checked; if ($('clear-key').checked) $('api-key').value = ''; };
   $('add-quiet').onclick = () => { quietRow(); dirty = true; };
@@ -84,7 +90,7 @@
     if (!$('pet-name').value.trim()) { status('请填写宠物名称。', true); return; }
     const next = {
       pet:{name:$('pet-name').value.trim(), personality:$('pet-personality').value.trim(), speaking_style:$('pet-speaking-style').value.trim(), background:$('pet-background').value.trim()},
-      general: {...config.general, quiet_hours:quiet, min_announce_interval_min:Number($('announce-interval').value), announce_threshold:Number($('threshold').value)},
+      general: {...config.general, quiet_hours:quiet, min_announce_interval_min:announceIntervalChanged ? Number($('announce-interval').value) : config.general.min_announce_interval_min, announce_threshold:Number($('threshold').value)},
       llm: {api_base:$('api-base').value.trim(), model:$('model').value.trim(), api_key:$('api-key').value.trim() || null, embedding_model:$('embedding').value.trim() || null},
       fetch: {...config.fetch, rsshub_endpoint:$('rsshub').value.trim(), default_interval_min:Number($('fetch-default').value), platforms:[...$('platform-list').children].map(row => ({id:row.dataset.platform, enabled:row.querySelector('[type=checkbox]').checked, interval_min:Number(row.querySelector('[type=number]').value)}))},
       tts: {...config.tts, enabled:$('tts-enabled').checked, voice:$('voice').value}, clear_api_key:$('clear-key').checked,
@@ -95,7 +101,7 @@
       await invoke('save_config', {config:next}); configSaved = true;
       await invoke('update_profile', {profile:{...profile, persona:$('persona').value, interests, schedule:{quiet_hours:quiet,min_announce_interval_min:next.general.min_announce_interval_min}}});
       const values = await Promise.all([invoke('get_config'), invoke('get_profile')]); [config, profile] = values; render(); dirty = false;
-      status('已保存并应用。语音与 RSSHub 地址修改需重启。');
+      status('已保存并应用。Windows 音色用于下一条回复，关闭语音会停止当前朗读；RSSHub 地址修改需重启。');
     } catch (error) {
       status((configSaved ? '配置已保存，画像保存或刷新未完成：' : '保存失败：') + String(error), true);
       // A retry must retain the newly saved key, even if profile persistence failed.

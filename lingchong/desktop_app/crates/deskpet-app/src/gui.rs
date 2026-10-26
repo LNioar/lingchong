@@ -158,19 +158,27 @@ pub(crate) fn announce_to_ui(app: &AppHandle, ann: deskpet_agent::AnnounceResult
         "url": ann.source_url,
         "script": ann.script,
         "mood_hint": ann.mood_hint.as_str(),
-    }));
+    }), true);
 }
 
 pub(crate) fn show_status(app: &AppHandle, message: &str, mood: &str) {
     publish_bubble(app, serde_json::json!({
         "hot_id": null, "title": "", "url": "", "script": message, "mood_hint": mood,
-    }));
+    }), false);
 }
 
-fn publish_bubble(app: &AppHandle, payload: serde_json::Value) {
-    if let Ok(mut last) = LAST_BUBBLE.lock() {
-        *last = Some(payload.clone());
-    }
+pub(crate) fn show_reply(app: &AppHandle, message: &str, mood: &str) {
+    publish_bubble(app, serde_json::json!({
+        "hot_id": null, "title": "", "url": "", "script": message, "mood_hint": mood,
+    }), true);
+}
+
+fn publish_bubble(app: &AppHandle, payload: serde_json::Value, _speak: bool) {
+    // Serialize publication and closing so a stale close cannot hide a new bubble.
+    let Ok(mut last) = LAST_BUBBLE.lock() else { return; };
+    #[cfg(target_os = "windows")]
+    let payload = crate::windows_speech::prepare(app, payload, _speak);
+    *last = Some(payload.clone());
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if let Ok(bubble) = ensure_bubble_window(app) {
@@ -189,6 +197,14 @@ fn publish_bubble(app: &AppHandle, payload: serde_json::Value) {
 pub fn run() {
     tauri::Builder::default()
         .setup(move |app| {
+            // Explicit debug-only GUI smoke mode uses isolated data and never
+            // starts collectors or sends model requests.
+            #[cfg(all(debug_assertions, target_os = "windows"))]
+            let speech_smoke = std::env::args().any(|arg| arg == "--speech-smoke-test");
+            #[cfg(all(debug_assertions, target_os = "windows"))]
+            if speech_smoke {
+                crate::paths::init(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/tts-gui-smoke"));
+            }
             // Android：最先注入 app 私有数据目录，随后 logging/config/db 全部落到该目录。
             // 桌面无需注入，paths 回退到系统数据目录，行为与之前一致。
             #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -198,8 +214,17 @@ pub fn run() {
 
             crate::logging::init_logging();
             let config = AppConfig::load();
+            #[cfg(all(debug_assertions, target_os = "windows"))]
+            let config = if speech_smoke {
+                let mut config = AppConfig::default();
+                config.llm.api_key.clear();
+                for platform in &mut config.fetch.platforms { platform.enabled = false; }
+                config
+            } else { config };
             let state = Arc::new(AppState::new(config));
             app.manage(state.clone());
+            #[cfg(target_os = "windows")]
+            app.manage(crate::windows_speech::SpeechController::default());
             let app_handle = app.handle().clone();
 
             #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -257,13 +282,14 @@ pub fn run() {
                                         let ann = state.run_agent_cycle_force().await;
                                         match ann {
                                             Some(a) => {
+                                                #[cfg(not(target_os = "windows"))]
                                                 state.speak(&a.script).await;
                                                 announce_to_ui(&ah, a);
                                             }
                                             None => {
                                                 // 无热点时同样用 LLM 回应，并做 excited 动作
                                                 let text = state.idle_reply().await;
-                                                show_status(&ah, &text, "excited");
+                                                show_reply(&ah, &text, "excited");
                                             }
                                         }
                                     }
@@ -291,6 +317,12 @@ pub fn run() {
                     .build(app)?;
             }
 
+            #[cfg(all(debug_assertions, target_os = "windows"))]
+            if speech_smoke {
+                show_reply(&app_handle, "这是一条桌宠语音集成测试。气泡已经显示，现在开始朗读。语音结束后，气泡才会恢复自动关闭。", "happy");
+                return Ok(());
+            }
+
             // 后台线程跑调度器 + 采集 + Agent 周期 + 主动播报
             // 顺序：启动调度器 → 采集一轮 → 立即跑 Agent → 之后按间隔循环
             let state2 = state.clone();
@@ -309,6 +341,7 @@ pub fn run() {
                     // 仅在真正有播报内容时才弹气泡/切情绪；
                     // None（勿扰、静默、无候选）时保持安静，避免每周期弹「暂时没有值得说的热点」。
                     if let Some(a) = state2.run_agent_cycle().await {
+                        #[cfg(not(target_os = "windows"))]
                         state2.speak(&a.script).await;
                         announce_to_ui(&app_handle2, a);
                     }
@@ -331,11 +364,20 @@ pub fn run() {
             ipc::open_url,
             ipc::hide_bubble,
             ipc::bubble_ready,
+            ipc::bubble_presented,
             ipc::get_settings,
             ipc::save_settings,
             ipc::get_config,
             ipc::save_config,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            #[cfg(target_os = "windows")]
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                crate::windows_speech::stop(_app, None);
+            }
+            #[cfg(not(target_os = "windows"))]
+            let _ = event;
+        });
 }

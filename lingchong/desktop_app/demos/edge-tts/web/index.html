@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="demo-token" content="__DEMO_TOKEN__">
+  <title>Edge TTS · 语音实验室</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header><a class="brand" href="/">DESKPET <span>/ VOICE LAB</span></a><span class="badge">独立 Demo · 在线合成</span></header>
+    <section class="intro"><p class="eyebrow">让文字，拥有声音</p><h1>语音实验室<span>Edge TTS</span></h1><p>先调好声音，再让桌宠开口。这里只测试语音，不启动宠物、热点采集或模型。</p></section>
+    <main>
+      <section class="card editor">
+        <div class="section-heading"><h2><span>01</span> 朗读内容</h2><span id="text-count">0 / 3000</span></div>
+        <label class="sr-only" for="text">要朗读的文字</label>
+        <textarea id="text" maxlength="3000" spellcheck="false">你好，我是你的桌面小伙伴。今天也要记得休息一下，喝一口水，再继续做喜欢的事情。</textarea>
+        <div class="samples"><span>试一段</span><button type="button" data-sample="greeting">桌宠问候</button><button type="button" data-sample="news">热点文案</button><button type="button" data-sample="mixed">中英混读</button></div>
+        <p class="privacy">点击合成后，输入文字将发送到 Edge 在线语音服务。无需填写模型 API Key。</p>
+        <div class="actions"><button id="synthesize" class="primary" type="button">合成并试听 <span aria-hidden="true">↗</span></button><button id="stop" type="button" disabled>停止</button><label class="check"><input id="auto-play" type="checkbox" checked> 合成后自动播放</label></div>
+      </section>
+      <section class="card parameters">
+        <div class="section-heading"><h2><span>02</span> 声音参数</h2><button id="voices-refresh" type="button" class="text-button">刷新在线音色</button></div>
+        <label for="voice">音色</label><select id="voice"><option value="zh-CN-XiaoxiaoNeural">晓晓 · 中文女声（示例）</option><option value="zh-CN-YunxiNeural">云希 · 中文男声（示例）</option></select>
+        <p id="voice-note" class="help">示例音色需联网验证；可刷新获取服务当前提供的音色。</p>
+        <label for="proxy">HTTP 代理（可选）</label><input id="proxy" type="url" placeholder="http://127.0.0.1:7897" spellcheck="false" autocomplete="off"><p class="help">直连失败时可填写已有代理的 HTTP 地址，不修改系统网络设置。</p>
+        <label for="rate">语速 <output id="rate-value">+0%</output></label><input id="rate" type="range" min="-50" max="100" value="0" step="5"><div class="range-labels"><span>慢一些</span><span>快一些</span></div>
+        <label for="pitch">音调 <output id="pitch-value">+0 Hz</output></label><input id="pitch" type="range" min="-50" max="50" value="0" step="5"><div class="range-labels"><span>低一些</span><span>高一些</span></div>
+        <label for="volume">播放音量 <output id="volume-value">80%</output></label><input id="volume" type="range" min="0" max="100" value="80"><p class="help">音量实时作用于浏览器播放器；语速与音调需重新合成。</p>
+      </section>
+      <section class="card result">
+        <div class="section-heading"><h2><span>03</span> 试听与结果</h2><span id="state-badge" class="state-badge">待开始</span></div>
+        <p id="status" role="status" aria-live="polite">准备好了，输入文字后点击“合成并试听”。</p>
+        <audio id="audio" controls preload="metadata" aria-label="语音试听播放器"></audio>
+        <div class="result-footer"><span id="metrics">尚未生成音频</span><a id="download" hidden download="deskpet-speech.mp3">下载 MP3 ↓</a></div>
+      </section>
+    </main>
+    <footer>本地运行 · 合成需要联网 · 浏览器播放 · 与主程序数据隔离</footer>
+  </div>
+</body>
+</html>

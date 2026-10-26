@@ -13,7 +13,7 @@
   <form id="settings-form">
     <fieldset id="general"><legend>常规</legend><p class="hint">勿扰期间暂停主动播报，手动召唤仍可使用。</p>
       <div class="label-row"><span>勿扰时段</span><button id="add-quiet" type="button" class="secondary">＋ 添加时段</button></div><div id="quiet-list"></div>
-      <label for="announce-interval">最小播报间隔（分钟）<input id="announce-interval" type="number" min="1" step="1" required></label>
+      <label for="announce-interval">播报间隔<select id="announce-interval" aria-describedby="announce-interval-hint" required><option value="60">大 · 更少打扰</option><option value="45">中 · 适度分享</option><option value="30">小 · 更常分享</option></select></label><p id="announce-interval-hint" class="hint">根据热点和你的兴趣择机分享，间隔越大，打扰越少。</p>
       <label for="threshold">播报阈值 <output id="threshold-value" for="threshold"></output><input id="threshold" type="range" min="0" max="1" step="0.01"></label><p class="hint">越高越挑剔，越低越容易分享热点。</p>
     </fieldset>
     <fieldset id="pet-profile"><legend>宠物画像</legend><p class="hint">定义宠物的身份、性格与表达偏好，保存后用于下一次模型回复。回复形式由模型自由发挥。</p>
@@ -35,7 +35,7 @@
       <div class="platform-head"><span>启用平台</span><span>间隔 / 分钟</span></div><div id="platform-list"></div>
     </fieldset>
     <fieldset id="tts"><legend>语音</legend><label class="check"><input id="tts-enabled" type="checkbox">启用语音播报</label>
-      <label for="voice">播报音色<select id="voice"><option value="zh-CN-XiaoxiaoNeural">晓晓 · 女声</option><option value="zh-CN-YunxiNeural">云希 · 男声</option><option value="zh-CN-XiaoyiNeural">晓伊 · 女声</option><option value="zh-CN-YunjianNeural">云健 · 男声</option></select></label><p class="hint">语音设置需重启应用后生效。</p>
+      <label for="voice">播报音色<select id="voice"><option value="zh-CN-XiaoxiaoNeural">晓晓 · 女声</option><option value="zh-CN-YunxiNeural">云希 · 男声</option><option value="zh-CN-XiaoyiNeural">晓伊 · 女声</option><option value="zh-CN-YunjianNeural">云健 · 男声</option></select></label><p class="hint">Windows 语音开关和音色保存后生效；在线合成需要网络及语音运行时。其他平台的语音支持保持原状。</p>
     </fieldset>
     <fieldset id="profile"><legend>用户画像</legend><p class="hint">告诉基尔兽你喜欢什么，反馈也会持续调整兴趣权重。</p>
       <label for="persona">人物描述<textarea id="persona" rows="3" placeholder="例如：喜欢科技和游戏，希望播报轻松简短。"></textarea></label>

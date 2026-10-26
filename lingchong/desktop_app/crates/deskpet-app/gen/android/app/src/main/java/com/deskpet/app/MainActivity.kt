@@ -1,6 +1,7 @@
 package com.deskpet.app
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -10,6 +11,8 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // A desktop companion should stay visible while its Activity is in front.
+    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     hideSystemBars()
   }
 

@@ -38,3 +38,39 @@ html.is-mobile{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-tap-
 #settings-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:12px;}
 @media(max-height:550px){.is-mobile #mobile-header{padding-top:calc(10px + env(safe-area-inset-top));padding-bottom:8px;}.is-mobile #mobile-stage{gap:12px;padding-top:8px;padding-bottom:calc(12px + env(safe-area-inset-bottom));}.is-mobile #app{height:120px;}.is-mobile #pet-wrap{transform:scale(.6667);}}
 @media(max-height:400px){.is-mobile #app{height:90px;}.is-mobile #pet-wrap{transform:scale(.5);}.is-mobile #mobile-stage{gap:8px;}#mobile-hint{font-size:12px;}}
+
+/* A quiet, full-screen face for a physical companion's Android display. */
+#companion-controls{flex:none;padding:8px 20px 12px;}
+.is-mobile #companion-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+#companion-controls>span{font-size:12px;opacity:.65;}
+.is-android body{color:#e9efea;background:radial-gradient(ellipse at 40% 48%,#234541 0%,#132b2b 48%,#0c1e21 100%);}
+.is-android #mobile-header{z-index:1;padding:calc(12px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) 6px calc(20px + env(safe-area-inset-left));}
+.is-android #mobile-header>div{display:flex;align-items:center;gap:12px;min-width:0;}
+.is-android #mobile-header strong{font-size:17px;font-weight:600;letter-spacing:1px;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.is-android #companion-status{display:flex;align-items:center;gap:7px;margin:0;color:#a8c4b8;font-size:12px;}
+.is-android #companion-status::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:#a9c5a3;box-shadow:0 0 10px #a9c5a344;}
+.is-android #open-settings{display:flex;align-items:center;justify-content:center;width:44px;height:44px;padding:0;border:1px solid #cbe0d31c;border-radius:50%;background:#e8f5e908;color:#bbd0c6;font-size:22px;}
+.is-android .settings-label{display:none;}
+.is-android #mobile-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;align-items:center;gap:10px 24px;padding:8px calc(24px + env(safe-area-inset-right)) 8px calc(24px + env(safe-area-inset-left));}
+.is-android #app{grid-column:1 / 3;grid-row:1;height:100%;min-height:0;isolation:isolate;}
+.is-android #app::before{content:"";position:absolute;width:min(70%,260px);height:32px;bottom:8%;border-radius:50%;background:#a7c4a920;filter:blur(12px);z-index:-1;}
+.is-android #pet-wrap{transform:scale(1.25);border-radius:24px;}
+.is-android #pet-wrap:focus-visible{outline:2px solid #efbd80;outline-offset:8px;}
+.is-android #mobile-hint{grid-column:1 / 3;grid-row:2;color:#a7bdb3;font-size:12px;line-height:1.5;}
+.is-android.has-bubble #app,.is-android.has-bubble #mobile-hint{grid-column:1;}
+.is-android #mobile-bubble{grid-column:2;grid-row:1 / 3;align-self:start;justify-self:end;max-height:100%;max-width:520px;min-width:0;padding:18px 20px;border:1px solid #f4e2c9;border-radius:22px 22px 22px 6px;background:#fff7e9;color:#393b32;box-shadow:0 12px 40px #0003;scrollbar-width:thin;scrollbar-color:#b6af9e transparent;}
+.is-android #mobile-bubble h2{font-size:clamp(16px,2.4vw,22px);line-height:1.4;margin-bottom:8px;}
+.is-android #mobile-bubble p{font-size:clamp(15px,2.1vw,19px);line-height:1.75;}
+.is-android #bubble-close{top:4px;right:4px;padding:0;border-radius:50%;background:transparent;color:#817f70;}
+.is-android #bubble-feedback{flex-wrap:wrap;gap:8px;margin-top:12px;}
+.is-android #bubble-feedback button{font-size:13px;background:#eae6d8;color:#555a4b;}
+.is-android #companion-controls{padding:6px calc(24px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));}
+.is-android #companion-controls>span{font-size:11px;letter-spacing:2px;color:#adc2b7;}
+.is-android #refresh-hotspots{min-width:154px;background:#edbc82;color:#283b32;border-radius:24px;font-size:14px;font-weight:600;box-shadow:0 4px 18px #0002;}
+.is-android #refresh-hotspots:active{background:#f6d1a1;}
+.is-android #settings-dialog{width:min(660px,calc(100% - 32px));max-height:calc(100dvh - 24px);border-radius:20px;padding:20px 24px;}
+.is-android #settings-dialog::backdrop{background:#061716ba;backdrop-filter:blur(6px);}
+@media(min-height:500px){.is-android #pet-wrap{transform:scale(1.55);}.is-android #mobile-stage{padding-top:20px;}.is-android #mobile-bubble{padding:24px;}}
+@media(max-height:400px){.is-android #pet-wrap{transform:scale(.85);}.is-android #mobile-header{padding-top:calc(6px + env(safe-area-inset-top));}.is-android #mobile-bubble{padding:12px 16px;}}
+@media(max-height:320px){.is-android #pet-wrap{transform:scale(.58);}.is-android #mobile-header{padding-top:env(safe-area-inset-top);padding-bottom:0;}.is-android #mobile-stage{gap:4px 16px;padding-top:4px;padding-bottom:4px;}.is-android #companion-controls{padding-bottom:calc(6px + env(safe-area-inset-bottom));}.is-android #mobile-hint{font-size:10px;}.is-android #mobile-bubble p{font-size:14px;line-height:1.5;}}
+@media(prefers-reduced-motion:reduce){.is-android .pet-svg *{animation:none;transition:none;}}
